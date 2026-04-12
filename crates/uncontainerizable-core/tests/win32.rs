@@ -74,14 +74,54 @@ async fn identity_based_preemption_kills_predecessor() {
     // Give Windows time to complete the TerminateJobObject + process reap.
     tokio::time::sleep(Duration::from_millis(300)).await;
 
-    // The first container's JobObject handle is still open, so the job's
-    // name stays bound and the second spawn ends up sharing the same
-    // kernel object. `is_empty()` would see the second PID and return
-    // false. What we actually care about is: the *predecessor process*
-    // must be dead. Query it directly.
     assert!(
-        !pid_alive(first_pid),
-        "predecessor PID {first_pid} should be dead after second spawn"
+        first.is_empty().await.unwrap(),
+        "predecessor job should be empty after second spawn"
+    );
+
+    let _ = second.destroy(DestroyOptions::default()).await;
+}
+
+#[tokio::test]
+async fn destroying_superseded_container_does_not_kill_successor() {
+    let app = App::new("test.win32.superseded_destroy").unwrap();
+    let test_child = cargo_example_path("test-child.exe");
+
+    let mut first = app
+        .contain(
+            test_child.to_str().unwrap(),
+            ContainOptions {
+                identity: Some("browser".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("first spawn");
+    let mut second = app
+        .contain(
+            test_child.to_str().unwrap(),
+            ContainOptions {
+                identity: Some("browser".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("second spawn");
+    let second_pid = second.pid();
+
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    let result = first.destroy(DestroyOptions::default()).await;
+    assert!(
+        result.errors.is_empty(),
+        "destroying superseded container surfaced errors: {:?}",
+        result.errors
+    );
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    assert!(
+        pid_alive(second_pid),
+        "destroying superseded container should not kill successor"
     );
 
     let _ = second.destroy(DestroyOptions::default()).await;

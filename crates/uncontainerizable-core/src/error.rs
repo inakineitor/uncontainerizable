@@ -100,6 +100,13 @@ pub enum CgroupError {
 #[cfg(windows)]
 #[derive(Debug, Error)]
 pub enum JobObjectError {
+    #[error("failed to open predecessor job object {name:?}")]
+    OpenExisting {
+        name: String,
+        #[source]
+        source: windows::core::Error,
+    },
+
     #[error("failed to open or create job object {name:?}")]
     OpenOrCreate {
         name: String,
@@ -119,8 +126,35 @@ pub enum JobObjectError {
         source: windows::core::Error,
     },
 
+    #[error("failed to acquire identity lock {name:?}")]
+    LockAcquire {
+        name: String,
+        #[source]
+        source: windows::core::Error,
+    },
+
+    #[error("failed while waiting for identity lock {name:?}: status {status}")]
+    LockWait { name: String, status: u32 },
+
     #[error("failed to query job information")]
     Query {
+        #[source]
+        source: windows::core::Error,
+    },
+
+    #[error("failed to read or write identity state at {path}")]
+    IdentityState {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("no main thread found for suspended process {pid}")]
+    MissingMainThread { pid: u32 },
+
+    #[error("failed to resume suspended process {pid}")]
+    ResumeProcess {
+        pid: u32,
         #[source]
         source: windows::core::Error,
     },

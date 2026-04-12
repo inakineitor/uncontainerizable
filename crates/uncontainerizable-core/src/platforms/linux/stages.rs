@@ -7,6 +7,7 @@
 //! * `sigterm_frozen`: SIGTERM everything in the cgroup. Non-terminal.
 //! * `sigkill_frozen`: SIGKILL everything. Terminal.
 
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -18,13 +19,22 @@ use tokio::fs;
 use crate::container::{Container, Stage};
 use crate::error::StageError;
 
-use super::cgroup::Cgroup;
-
-pub fn linux_stages() -> Vec<Arc<dyn Stage>> {
-    vec![Arc::new(SigTermFrozen), Arc::new(SigKillFrozen)]
+pub fn linux_stages(cgroup_path: PathBuf) -> Vec<Arc<dyn Stage>> {
+    vec![
+        Arc::new(SigTermFrozen::new(cgroup_path.clone())),
+        Arc::new(SigKillFrozen::new(cgroup_path)),
+    ]
 }
 
-pub struct SigTermFrozen;
+pub struct SigTermFrozen {
+    cgroup_path: PathBuf,
+}
+
+impl SigTermFrozen {
+    pub fn new(cgroup_path: PathBuf) -> Self {
+        Self { cgroup_path }
+    }
+}
 
 #[async_trait]
 impl Stage for SigTermFrozen {
@@ -37,14 +47,21 @@ impl Stage for SigTermFrozen {
     fn max_wait(&self) -> Duration {
         Duration::from_secs(2)
     }
-    async fn execute(&self, c: &dyn Container) -> Result<(), StageError> {
-        let path = linux_cgroup_path(c)?;
-        signal_frozen_members(&path, Signal::SIGTERM).await?;
+    async fn execute(&self, _c: &dyn Container) -> Result<(), StageError> {
+        signal_frozen_members(&self.cgroup_path, Signal::SIGTERM).await?;
         Ok(())
     }
 }
 
-pub struct SigKillFrozen;
+pub struct SigKillFrozen {
+    cgroup_path: PathBuf,
+}
+
+impl SigKillFrozen {
+    pub fn new(cgroup_path: PathBuf) -> Self {
+        Self { cgroup_path }
+    }
+}
 
 #[async_trait]
 impl Stage for SigKillFrozen {
@@ -57,21 +74,20 @@ impl Stage for SigKillFrozen {
     fn max_wait(&self) -> Duration {
         Duration::from_millis(500)
     }
-    async fn execute(&self, c: &dyn Container) -> Result<(), StageError> {
-        let path = linux_cgroup_path(c)?;
+    async fn execute(&self, _c: &dyn Container) -> Result<(), StageError> {
         // Prefer `cgroup.kill` on kernels that support it (5.14+). Writing
         // `1` SIGKILLs every process in the subtree atomically.
-        let kill_file = path.join("cgroup.kill");
+        let kill_file = self.cgroup_path.join("cgroup.kill");
         if fs::metadata(&kill_file).await.is_ok() {
             fs::write(&kill_file, "1").await?;
             return Ok(());
         }
-        signal_frozen_members(&path, Signal::SIGKILL).await?;
+        signal_frozen_members(&self.cgroup_path, Signal::SIGKILL).await?;
         Ok(())
     }
 }
 
-async fn signal_frozen_members(path: &std::path::Path, signal: Signal) -> Result<(), StageError> {
+async fn signal_frozen_members(path: &Path, signal: Signal) -> Result<(), StageError> {
     fs::write(path.join("cgroup.freeze"), "1").await?;
     let procs = fs::read_to_string(path.join("cgroup.procs"))
         .await
@@ -84,24 +100,3 @@ async fn signal_frozen_members(path: &std::path::Path, signal: Signal) -> Result
     fs::write(path.join("cgroup.freeze"), "0").await?;
     Ok(())
 }
-
-/// Helper so stages can reach the cgroup path without knowing about
-/// `LinuxContainer` directly (the stages run before the container impl is
-/// fully in scope).
-fn linux_cgroup_path(c: &dyn Container) -> Result<std::path::PathBuf, StageError> {
-    // Downcast through a platform-specific accessor baked into `Container`
-    // via `cgroup_path_hint` metadata stored in the probe's executable_path
-    // is brittle; instead, each stage looks it up by walking `/proc/<pid>/cgroup`
-    // for the root PID, which always reflects the cgroup we placed it in.
-    let pid = c.pid();
-    let raw = std::fs::read_to_string(format!("/proc/{pid}/cgroup"))?;
-    let rel = raw
-        .lines()
-        .find_map(|l| l.strip_prefix("0::"))
-        .ok_or(StageError::MissingProbe("cgroup path"))?;
-    Ok(std::path::Path::new("/sys/fs/cgroup").join(rel.trim_start_matches('/')))
-}
-
-// Re-export for docs.
-#[allow(dead_code)]
-pub(crate) fn _use_cgroup_type(_: &Cgroup) {}

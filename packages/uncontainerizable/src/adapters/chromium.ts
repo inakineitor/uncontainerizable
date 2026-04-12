@@ -23,9 +23,9 @@ const CHROMIUM_BASENAMES = [
  * session. That implementation needs per-OS profile-dir detection and
  * careful JSON editing; it ships in a follow-up.
  *
- * v0.1 emits a warning and returns. The adapter still matches so
- * callers wiring it in can see the "didn't run" signal and swap in a
- * real cleanup when v0.2 ships.
+ * Until then `clearCrashState` emits a warning and returns. The adapter
+ * still matches so callers wiring it in can see the "didn't run" signal
+ * and swap in a real cleanup when the full version ships.
  */
 export const chromium: Adapter = {
   name: "chromium",
@@ -38,9 +38,8 @@ export const chromium: Adapter = {
   },
 
   clearCrashState(_probe: Probe): void {
-    // biome-ignore lint/suspicious/noConsole: intentional v0.1 stub warning.
     console.warn(
-      "uncontainerizable: chromium.clearCrashState is a v0.1 stub; the next launch may show a 'didn't shut down correctly' dialog. Track the real implementation in a follow-up release."
+      "uncontainerizable: chromium.clearCrashState is a stub; the next launch may show a 'didn't shut down correctly' dialog. Track the real implementation in a follow-up release."
     );
   },
 };

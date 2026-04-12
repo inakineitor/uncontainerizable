@@ -92,12 +92,9 @@ pub enum CgroupError {
     #[error(transparent)]
     Io(#[from] std::io::Error),
 
-    /// Passthrough for arbitrary upstream `cgroups-rs` errors. A typed
-    /// `From<cgroups_rs::...::Error>` impl will be added alongside the Linux
-    /// cgroup integration so the error path (which differs between
-    /// `cgroups-rs` versions) can be pinned next to the real call sites.
-    #[error("cgroups-rs error: {0}")]
-    Upstream(String),
+    /// Catch-all for errors that don't fit the shaped variants above.
+    #[error("{0}")]
+    Other(String),
 }
 
 #[cfg(windows)]

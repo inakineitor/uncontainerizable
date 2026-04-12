@@ -12,7 +12,7 @@ const FIREFOX_BASENAMES = ["firefox", "Firefox", "firefox-bin"];
  * launch does not offer session restore. Per-OS profile-dir detection
  * and lz4 handling ship in a follow-up.
  *
- * v0.1 emits a warning and returns.
+ * Until then `clearCrashState` emits a warning and returns.
  */
 export const firefox: Adapter = {
   name: "firefox",
@@ -25,9 +25,8 @@ export const firefox: Adapter = {
   },
 
   clearCrashState(_probe: Probe): void {
-    // biome-ignore lint/suspicious/noConsole: intentional v0.1 stub warning.
     console.warn(
-      "uncontainerizable: firefox.clearCrashState is a v0.1 stub; the next launch may prompt to restore the previous session. Track the real implementation in a follow-up release."
+      "uncontainerizable: firefox.clearCrashState is a stub; the next launch may prompt to restore the previous session. Track the real implementation in a follow-up release."
     );
   },
 };

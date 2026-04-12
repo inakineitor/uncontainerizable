@@ -1,0 +1,40 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "globalDependencies": [
+    "rust-toolchain.toml",
+    "Cargo.toml",
+    "Cargo.lock",
+    "crates/uncontainerizable-core/**"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "npm/**"]
+    },
+    "build:native": {
+      "outputs": ["dist/**", "npm/**"],
+      "inputs": ["src/**", "Cargo.toml", "build.rs", "package.json"]
+    },
+    "build:ts": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
+    },
+    "test": {
+      "dependsOn": ["^build"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build"]
+    },
+    "lint": {},
+    "lint:package": {
+      "dependsOn": ["build"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "clean": {
+      "cache": false
+    }
+  }
+}

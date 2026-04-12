@@ -1,0 +1,24 @@
+pre-commit:
+  parallel: true
+  jobs:
+    - name: ultracite
+      run: pnpm dlx ultracite fix
+      glob:
+        - "*.js"
+        - "*.jsx"
+        - "*.ts"
+        - "*.tsx"
+        - "*.json"
+        - "*.jsonc"
+        - "*.css"
+      stage_fixed: true
+    - name: cargo-fmt
+      run: cargo fmt --all -- --check
+      glob: "*.rs"
+    - name: cargo-clippy
+      run: cargo clippy --workspace --all-targets -- -D warnings
+
+commit-msg:
+  jobs:
+    - name: commitlint
+      run: pnpm exec commitlint --edit {1}

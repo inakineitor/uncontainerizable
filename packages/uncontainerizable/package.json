@@ -1,0 +1,82 @@
+{
+  "name": "uncontainerizable",
+  "version": "0.0.0",
+  "description": "Graceful process lifecycle for programs that can't be containerized",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./adapters": {
+      "import": {
+        "types": "./dist/adapters/index.d.mts",
+        "default": "./dist/adapters/index.mjs"
+      },
+      "require": {
+        "types": "./dist/adapters/index.d.cts",
+        "default": "./dist/adapters/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "imports": {
+    "#/*": "./src/*"
+  },
+  "sideEffects": false,
+  "license": "MIT",
+  "files": [
+    "dist/**"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "build:ts": "tsdown",
+    "dev": "tsdown --watch",
+    "check-types": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "lint:package": "publint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "pnpm run build && publint",
+    "clean": "rm -rf .turbo dist node_modules"
+  },
+  "dependencies": {
+    "@uncontainerizable/native": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "@uncontainerizable/tsconfig": "workspace:*",
+    "publint": "^0.3",
+    "tsdown": "^0.20",
+    "typescript": "^6",
+    "vitest": "^4"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/inakineitor/uncontainerizable.git",
+    "directory": "packages/uncontainerizable"
+  },
+  "keywords": [
+    "process",
+    "lifecycle",
+    "supervisor",
+    "sandbox",
+    "napi-rs"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

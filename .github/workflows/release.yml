@@ -1,0 +1,129 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  APP_NAME: uncontainerizable
+  CARGO_INCREMENTAL: "1"
+  MACOSX_DEPLOYMENT_TARGET: "10.13"
+  NPM_CONFIG_PROVENANCE: "true"
+
+jobs:
+  build-native:
+    name: Build ${{ matrix.settings.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - host: macos-latest
+            target: x86_64-apple-darwin
+            build: pnpm --filter @uncontainerizable/native exec napi build --platform --release --output-dir dist --js index.js --dts index.d.ts --target x86_64-apple-darwin
+          - host: macos-latest
+            target: aarch64-apple-darwin
+            build: pnpm --filter @uncontainerizable/native exec napi build --platform --release --output-dir dist --js index.js --dts index.d.ts --target aarch64-apple-darwin
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            build: pnpm --filter @uncontainerizable/native exec napi build --platform --release --output-dir dist --js index.js --dts index.d.ts --target x86_64-unknown-linux-gnu --use-napi-cross
+          - host: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            build: pnpm --filter @uncontainerizable/native exec napi build --platform --release --output-dir dist --js index.js --dts index.d.ts --target aarch64-unknown-linux-gnu --use-napi-cross
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            build: pnpm --filter @uncontainerizable/native exec napi build --platform --release --output-dir dist --js index.js --dts index.d.ts --target x86_64-unknown-linux-musl -x
+          - host: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+            build: pnpm --filter @uncontainerizable/native exec napi build --platform --release --output-dir dist --js index.js --dts index.d.ts --target aarch64-unknown-linux-musl -x
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+            build: pnpm --filter @uncontainerizable/native exec napi build --platform --release --output-dir dist --js index.js --dts index.d.ts --target x86_64-pc-windows-msvc
+          - host: windows-latest
+            target: aarch64-pc-windows-msvc
+            build: pnpm --filter @uncontainerizable/native exec napi build --platform --release --output-dir dist --js index.js --dts index.d.ts --target aarch64-pc-windows-msvc
+    runs-on: ${{ matrix.settings.host }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.settings.target }}
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ~/.napi-rs
+            .cargo-cache
+            target/
+          key: ${{ matrix.settings.target }}-cargo-${{ matrix.settings.host }}
+      - uses: mlugg/setup-zig@v2
+        if: ${{ contains(matrix.settings.target, 'musl') }}
+        with:
+          version: 0.14.1
+      - name: Install cargo-zigbuild
+        if: ${{ contains(matrix.settings.target, 'musl') }}
+        uses: taiki-e/install-action@v2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          tool: cargo-zigbuild
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        run: ${{ matrix.settings.build }}
+        shell: bash
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: bindings-${{ matrix.settings.target }}
+          path: crates/uncontainerizable-node/dist/${{ env.APP_NAME }}.*.node
+          if-no-files-found: error
+
+  release:
+    name: Release
+    needs: build-native
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org/
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Download artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: crates/uncontainerizable-node/artifacts
+      - name: Assemble per-target packages
+        run: pnpm --filter @uncontainerizable/native run artifacts
+        env:
+          NAPI_ARTIFACTS_DIR: artifacts
+      - name: Build TS wrapper
+        run: pnpm --filter uncontainerizable run build
+      - name: Create Release Pull Request or Publish
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          publish: pnpm release
+          createGithubReleases: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

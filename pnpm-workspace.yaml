@@ -1,0 +1,8 @@
+packages:
+  - crates/uncontainerizable-node
+  - packages/*
+autoInstallPeers: true
+
+onlyBuiltDependencies:
+  - lefthook
+  - '@biomejs/biome'

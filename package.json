@@ -1,0 +1,38 @@
+{
+  "name": "uncontainerizable-monorepo",
+  "private": true,
+  "description": "Graceful process lifecycle for programs that can't be containerized",
+  "scripts": {
+    "build": "turbo run build",
+    "build:native": "turbo run build:native",
+    "build:ts": "turbo run build:ts",
+    "dev": "turbo run dev",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "lint": "pnpm dlx ultracite check",
+    "lint:fix": "pnpm dlx ultracite fix",
+    "lint:rust": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings",
+    "lint:package": "turbo run lint:package",
+    "clean": "turbo run clean && rm -rf node_modules target",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "turbo run build && changeset publish",
+    "prepare": "lefthook install",
+    "check": "ultracite check",
+    "fix": "ultracite fix"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.11",
+    "@changesets/cli": "^2.28",
+    "@commitlint/cli": "^20",
+    "@commitlint/config-conventional": "^20",
+    "lefthook": "^2.1",
+    "publint": "^0.3",
+    "turbo": "^2.9",
+    "ultracite": "7.5.6"
+  },
+  "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319",
+  "engines": {
+    "node": ">=24"
+  }
+}

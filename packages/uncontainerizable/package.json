@@ -1,10 +1,30 @@
 {
   "name": "uncontainerizable",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Graceful process lifecycle for programs that can't be containerized",
+  "keywords": [
+    "lifecycle",
+    "napi-rs",
+    "process",
+    "sandbox",
+    "supervisor"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/inakineitor/uncontainerizable.git",
+    "directory": "packages/uncontainerizable"
+  },
+  "files": [
+    "dist/**"
+  ],
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
+  "imports": {
+    "#/*": "./src/*"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.mts",
@@ -16,14 +36,10 @@
     },
     "./package.json": "./package.json"
   },
-  "imports": {
-    "#/*": "./src/*"
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
-  "sideEffects": false,
-  "license": "MIT",
-  "files": [
-    "dist/**"
-  ],
   "scripts": {
     "build": "tsdown",
     "build:ts": "tsdown",
@@ -49,21 +65,5 @@
   },
   "engines": {
     "node": ">=24"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/inakineitor/uncontainerizable.git",
-    "directory": "packages/uncontainerizable"
-  },
-  "keywords": [
-    "process",
-    "lifecycle",
-    "supervisor",
-    "sandbox",
-    "napi-rs"
-  ],
-  "publishConfig": {
-    "access": "public",
-    "provenance": true
   }
 }

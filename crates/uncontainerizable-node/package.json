@@ -1,32 +1,24 @@
 {
   "name": "@uncontainerizable/native",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Native bindings for uncontainerizable",
-  "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/inakineitor/uncontainerizable.git",
     "directory": "crates/uncontainerizable-node"
   },
-  "napi": {
-    "binaryName": "uncontainerizable",
-    "targets": [
-      "x86_64-apple-darwin",
-      "aarch64-apple-darwin",
-      "x86_64-unknown-linux-gnu",
-      "aarch64-unknown-linux-gnu",
-      "x86_64-unknown-linux-musl",
-      "aarch64-unknown-linux-musl",
-      "x86_64-pc-windows-msvc",
-      "aarch64-pc-windows-msvc"
-    ]
-  },
   "files": [
     "dist/**"
   ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "artifacts": "napi create-npm-dirs && napi artifacts --npm-dir npm",
     "build": "napi build --platform --release --esm --output-dir dist",
@@ -41,12 +33,30 @@
     "@napi-rs/cli": "^3.5",
     "publint": "^0.3"
   },
+  "optionalDependencies": {
+    "@uncontainerizable/native-darwin-arm64": "0.0.1",
+    "@uncontainerizable/native-darwin-x64": "0.0.1",
+    "@uncontainerizable/native-linux-arm64-gnu": "0.0.1",
+    "@uncontainerizable/native-linux-arm64-musl": "0.0.1",
+    "@uncontainerizable/native-linux-x64-gnu": "0.0.1",
+    "@uncontainerizable/native-linux-x64-musl": "0.0.1",
+    "@uncontainerizable/native-win32-arm64-msvc": "0.0.1",
+    "@uncontainerizable/native-win32-x64-msvc": "0.0.1"
+  },
+  "napi": {
+    "binaryName": "uncontainerizable",
+    "targets": [
+      "x86_64-apple-darwin",
+      "aarch64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu",
+      "x86_64-unknown-linux-musl",
+      "aarch64-unknown-linux-musl",
+      "x86_64-pc-windows-msvc",
+      "aarch64-pc-windows-msvc"
+    ]
+  },
   "engines": {
     "node": ">=24"
-  },
-  "publishConfig": {
-    "access": "public",
-    "provenance": true,
-    "registry": "https://registry.npmjs.org/"
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "uncontainerizable",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Graceful process lifecycle for programs that can't be containerized",
   "keywords": [
     "lifecycle",

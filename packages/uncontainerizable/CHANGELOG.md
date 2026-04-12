@@ -1,5 +1,13 @@
 # uncontainerizable
 
+## 0.0.3
+
+### Patch Changes
+
+- Fix CI permissioning
+- Updated dependencies
+  - @uncontainerizable/native@0.0.3
+
 ## 0.0.2
 
 ### Patch Changes

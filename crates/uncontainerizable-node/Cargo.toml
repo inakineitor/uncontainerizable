@@ -13,6 +13,7 @@ crate-type = ["cdylib"]
 [dependencies]
 napi.workspace = true
 napi-derive.workspace = true
+tokio = { workspace = true, features = ["sync"] }
 uncontainerizable-core = { path = "../uncontainerizable-core" }
 
 [build-dependencies]

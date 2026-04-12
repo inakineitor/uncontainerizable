@@ -1,6 +1,6 @@
 # uncontainerizable
 
-Graceful process lifecycle for programs that cannot be put in real containers —
+Graceful process lifecycle for programs that cannot be put in real containers:
 browsers, GUI apps, and tools that need the user's window server, keychain, or
 display. Rust core with async APIs plus Node bindings via napi-rs.
 
@@ -20,9 +20,9 @@ packages/tsconfig/               # Shared TS config (workspace-private)
 
 | Platform          | Preemption mechanism | Stages                            |
 | ----------------- | -------------------- | --------------------------------- |
-| Linux (x64/arm)   | cgroup v2            | SIGTERM → SIGKILL (cgroup freeze) |
-| macOS (x64/arm)   | argv[0] tag scanning | aevt/quit → SIGTERM → SIGKILL     |
-| Windows (x64/arm) | named Job Object     | WM_CLOSE → TerminateJobObject     |
+| Linux (x64/arm)   | cgroup v2            | SIGTERM then SIGKILL (cgroup freeze) |
+| macOS (x64/arm)   | argv[0] tag scanning | aevt/quit then SIGTERM then SIGKILL  |
+| Windows (x64/arm) | named Job Object     | WM_CLOSE then TerminateJobObject     |
 
 Linux musl is supported via `cargo-zigbuild` cross-compilation.
 
@@ -50,7 +50,7 @@ cargo test --workspace --exclude uncontainerizable-node
 ```
 
 The `uncontainerizable-node` crate is a `cdylib`, which `cargo test` can't
-execute directly — its behavior is verified through the Vitest suite against
+execute directly. Its behavior is verified through the Vitest suite against
 the built `.node` binary.
 
 ## Lint and format
@@ -91,7 +91,7 @@ pnpm changeset
 ```
 
 `uncontainerizable` and `@uncontainerizable/native` are `linked` so they always
-publish at the same version — mismatches break `require`/`import` of the wrapper.
+publish at the same version. Mismatches break `require`/`import` of the wrapper.
 
 Pushing to `main` triggers `.github/workflows/release.yml`:
 

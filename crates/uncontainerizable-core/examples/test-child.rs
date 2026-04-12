@@ -1,20 +1,25 @@
 //! Synthetic test child for uncontainerizable integration tests.
 //!
-//! Without arguments: installs handlers for SIGTERM/SIGINT/SIGHUP, prints
+//! On unix: installs handlers for SIGTERM/SIGINT/SIGHUP, prints
 //! `got sig <name>` then exits 0; otherwise sleeps 60 seconds and exits.
+//! With `--ignore-sigterm`, also installs a SIGTERM handler but ignores
+//! the signal, forcing callers to escalate to SIGKILL.
 //!
-//! With `--ignore-sigterm`: also installs a SIGTERM handler but ignores it,
-//! forcing callers to escalate to SIGKILL to shut the process down.
+//! On non-unix (Windows) this compiles to a no-op stub because the Darwin
+//! and Linux integration tests that use it are cfg-gated to unix. Windows
+//! integration tests come online alongside the Windows platform module and
+//! will use a separate helper binary.
 //!
 //! Built via `cargo build --example test-child`.
 
-use std::env;
-use std::time::Duration;
-
-use tokio::signal::unix::{SignalKind, signal};
-
+#[cfg(unix)]
 #[tokio::main]
 async fn main() {
+    use std::env;
+    use std::time::Duration;
+
+    use tokio::signal::unix::{SignalKind, signal};
+
     let ignore_sigterm = env::args().any(|a| a == "--ignore-sigterm");
     println!("test-child pid={} ready", std::process::id());
 
@@ -22,8 +27,8 @@ async fn main() {
     let mut sighup = signal(SignalKind::hangup()).expect("install SIGHUP");
 
     if ignore_sigterm {
-        // Still install the handler so the default kernel action doesn't
-        // terminate us; we just don't react to the signal.
+        // Install the handler so the default kernel action doesn't
+        // terminate us; don't react to the signal.
         let mut sigterm = signal(SignalKind::terminate()).expect("install SIGTERM");
         tokio::spawn(async move {
             loop {
@@ -59,4 +64,10 @@ async fn main() {
             println!("timeout, exiting");
         }
     }
+}
+
+#[cfg(not(unix))]
+fn main() {
+    eprintln!("test-child is unix-only; see examples/test-child.rs for context");
+    std::process::exit(1);
 }

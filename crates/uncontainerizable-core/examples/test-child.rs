@@ -5,10 +5,10 @@
 //! With `--ignore-sigterm`, also installs a SIGTERM handler but ignores
 //! the signal, forcing callers to escalate to SIGKILL.
 //!
-//! On non-unix (Windows) this compiles to a no-op stub because the Darwin
-//! and Linux integration tests that use it are cfg-gated to unix. Windows
-//! integration tests come online alongside the Windows platform module and
-//! will use a separate helper binary.
+//! On Windows: there is no kernel signal equivalent, so we simply sleep
+//! for 60 seconds. The Windows quit ladder's `wm_close_root` stage has
+//! nothing to target (console app, no top-level window), so tests that
+//! exercise the ladder expect to reach the terminal `terminate_job` stage.
 //!
 //! Built via `cargo build --example test-child`.
 
@@ -66,8 +66,18 @@ async fn main() {
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+#[tokio::main]
+async fn main() {
+    use std::time::Duration;
+
+    println!("test-child pid={} ready", std::process::id());
+    tokio::time::sleep(Duration::from_secs(60)).await;
+    println!("timeout, exiting");
+}
+
+#[cfg(not(any(unix, windows)))]
 fn main() {
-    eprintln!("test-child is unix-only; see examples/test-child.rs for context");
+    eprintln!("test-child only supports unix and windows targets");
     std::process::exit(1);
 }

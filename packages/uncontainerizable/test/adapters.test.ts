@@ -193,7 +193,7 @@ describe("chromium + firefox stub warnings", () => {
     try {
       chromium.clearCrashState?.(darwinProbe());
       expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining("chromium.clearCrashState is a v0.1 stub")
+        expect.stringContaining("chromium.clearCrashState is a stub")
       );
     } finally {
       warn.mockRestore();
@@ -205,7 +205,7 @@ describe("chromium + firefox stub warnings", () => {
     try {
       firefox.clearCrashState?.(darwinProbe());
       expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining("firefox.clearCrashState is a v0.1 stub")
+        expect.stringContaining("firefox.clearCrashState is a stub")
       );
     } finally {
       warn.mockRestore();

@@ -6,6 +6,7 @@ import type {
   JsQuitOptions,
   JsQuitResult,
   JsStageResult,
+  NodeContainer,
 } from "@uncontainerizable/native";
 
 export type SupportedPlatform = "linux" | "darwin" | "win32";
@@ -18,56 +19,38 @@ export type StageResult = JsStageResult;
 export type Probe = JsProbe;
 
 /**
- * Platform-agnostic handle for a spawned contained process.
- *
- * The concrete instance returned by `App.contain` is a TypeScript wrapper
- * that interposes adapter hooks on top of the native container returned
- * by the napi bridge. Consumers interact with it only through this type.
+ * Platform-agnostic handle for a spawned contained process. Returned by
+ * `App.contain`; backed by the napi-generated `NodeContainer` class.
  */
-export type Container = {
-  readonly pid: Promise<number>;
-  readonly probe: Promise<Probe>;
-  members(): Promise<number[]>;
-  isEmpty(): Promise<boolean>;
-  quit(opts?: QuitOptions): Promise<QuitResult>;
-  destroy(opts?: DestroyOptions): Promise<DestroyResult>;
-};
+export type Container = NodeContainer;
 
 /**
- * Per-app lifecycle hook. Every method except `name` and `matches` is
- * optional; unimplemented hooks are skipped.
+ * Per-app lifecycle hook. Each method except `name` and `matches` is
+ * optional; unimplemented hooks are skipped by the Rust orchestrator.
  *
- * v0.1 only invokes `clearCrashState` (after `destroy` reaches the
- * terminal stage). The other hooks are declared for forward compatibility
- * so an adapter written today does not need changes when the wrapper
- * grows per-stage invocation.
+ * Every hook may return a value or a Promise; the TypeScript wrapper
+ * normalizes both forms to `Promise<_>` before handing the adapter to
+ * the napi bridge. Hooks must not throw synchronously: a thrown value
+ * is trapped by the bridge and recorded in
+ * `QuitResult.adapterErrors`, but ergonomic code should prefer
+ * returning a rejected Promise.
  */
 export type Adapter = {
   readonly name: string;
   matches(probe: Probe): boolean | Promise<boolean>;
-  beforeQuit?(probe: Probe, container: Container): Promise<void> | void;
-  beforeStage?(
-    probe: Probe,
-    stageName: string,
-    container: Container
-  ): Promise<void> | void;
-  afterStage?(
-    probe: Probe,
-    result: StageResult,
-    container: Container
-  ): Promise<void> | void;
-  afterQuit?(
-    probe: Probe,
-    result: QuitResult,
-    container: Container
-  ): Promise<void> | void;
-  clearCrashState?(probe: Probe): Promise<void> | void;
+  beforeQuit?(probe: Probe): void | Promise<void>;
+  beforeStage?(probe: Probe, stageName: string): void | Promise<void>;
+  afterStage?(probe: Probe, result: StageResult): void | Promise<void>;
+  afterQuit?(probe: Probe, result: QuitResult): void | Promise<void>;
+  clearCrashState?(probe: Probe): void | Promise<void>;
 };
 
 /**
  * Extends the napi-generated options with a TypeScript-only `adapters`
- * field. Adapters run on the JS side around the native destroy call.
+ * field. The wrapper normalizes each adapter's hook methods to the
+ * async signatures the napi bridge expects before crossing the
+ * boundary.
  */
-export type ContainOptions = JsContainOptions & {
+export type ContainOptions = Omit<JsContainOptions, "adapters"> & {
   adapters?: Adapter[];
 };

@@ -1,10 +1,12 @@
 //! `NodeApp`: napi-exposed wrapper around `uncontainerizable_core::App`.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use napi_derive::napi;
-use uncontainerizable_core::{App, ContainOptions};
+use uncontainerizable_core::{Adapter, App, ContainOptions};
 
+use crate::adapter_bridge::DynamicAdapter;
 use crate::container::NodeContainer;
 use crate::errors::to_napi;
 use crate::types::JsContainOptions;
@@ -43,12 +45,19 @@ impl NodeApp {
             cwd: None,
             identity: None,
             darwin_tag_argv0: None,
+            adapters: None,
         });
+        let adapters: Vec<Arc<dyn Adapter>> = opts
+            .adapters
+            .unwrap_or_default()
+            .into_iter()
+            .map(|js| Arc::new(DynamicAdapter::from(js)) as Arc<dyn Adapter>)
+            .collect();
         let core_opts = ContainOptions {
             args: opts.args.unwrap_or_default(),
             env: opts.env.unwrap_or_default().into_iter().collect(),
             cwd: opts.cwd.map(PathBuf::from),
-            adapters: Vec::new(),
+            adapters,
             // Default `true` on Darwin so identity preemption actually works.
             darwin_tag_argv0: opts.darwin_tag_argv0.unwrap_or(true),
             identity: opts.identity,

@@ -2,6 +2,7 @@
 
 use napi_derive::napi;
 
+mod adapter_bridge;
 mod app;
 mod container;
 mod errors;

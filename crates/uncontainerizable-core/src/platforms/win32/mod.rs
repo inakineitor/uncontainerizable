@@ -45,7 +45,7 @@ pub async fn spawn(app: &App, command: &str, opts: ContainOptions) -> Result<Box
         None
     };
 
-    let (job, _claim, job_name) = if let Some(combined) = &identity {
+    let (job, claim, job_name) = if let Some(combined) = &identity {
         let claim = IdentityClaim::acquire(combined).map_err(|e| Error::Preempt {
             identity: combined.clone(),
             source: Box::new(e),
@@ -73,9 +73,8 @@ pub async fn spawn(app: &App, command: &str, opts: ContainOptions) -> Result<Box
         let _ = child.kill();
         return Err(crate::error::PlatformError::JobObject(error).into());
     }
-    let probe = probe::capture_probe(pid).await?;
     if let (Some(claim), Some(job_name), Some(combined)) =
-        (_claim.as_ref(), job_name.as_deref(), identity.as_ref())
+        (claim, job_name.as_deref(), identity.as_ref())
     {
         if let Err(error) = claim.commit(job_name) {
             let _ = child.kill();
@@ -90,6 +89,7 @@ pub async fn spawn(app: &App, command: &str, opts: ContainOptions) -> Result<Box
         return Err(crate::error::PlatformError::JobObject(error).into());
     }
 
+    let probe = probe::capture_probe(pid).await?;
     drop(child);
 
     let job = Arc::new(job);

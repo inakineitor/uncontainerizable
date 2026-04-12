@@ -135,7 +135,12 @@ describe("crashReporter.matches", () => {
   });
 });
 
-describe("appkit.clearCrashState", () => {
+// `appkit.clearCrashState` reads `os.homedir()`, which on macOS and Linux
+// honors `$HOME` but on Windows reads `USERPROFILE` and ignores `$HOME`.
+// The tempdir mock works reliably only on POSIX, so this describe block
+// skips on Windows runners. The pure-logic matches() tests above still
+// run on every platform.
+describe.runIf(process.platform !== "win32")("appkit.clearCrashState", () => {
   let testHome: string;
   let savedStateDir: string;
   let originalHome: string | undefined;

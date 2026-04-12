@@ -17,7 +17,12 @@ pub trait Adapter: Send + Sync {
 
     /// Decide whether this adapter applies to the spawned process. Called once
     /// per (adapter, probe) pair; the result is cached by the container.
-    fn matches(&self, probe: &Probe) -> bool;
+    ///
+    /// Async because the JS-side `DynamicAdapter` bridge calls into a user
+    /// function across the napi boundary. Rust-native adapters that return
+    /// a cheap boolean can implement this as a one-liner returning the
+    /// computed value.
+    async fn matches(&self, probe: &Probe) -> bool;
 
     /// Runs once before any stage executes.
     async fn before_quit(

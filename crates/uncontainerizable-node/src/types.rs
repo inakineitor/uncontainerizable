@@ -38,13 +38,16 @@ impl From<&CoreProbe> for JsProbe {
     }
 }
 
-#[napi(object)]
+// `object_to_js = false` because this is used as input only and the
+// `adapters` field holds TSFN references that have no ToNapiValue impl.
+#[napi(object, object_to_js = false)]
 pub struct JsContainOptions {
     pub args: Option<Vec<String>>,
     pub env: Option<HashMap<String, String>>,
     pub cwd: Option<String>,
     pub identity: Option<String>,
     pub darwin_tag_argv0: Option<bool>,
+    pub adapters: Option<Vec<crate::adapter_bridge::JsAdapter>>,
 }
 
 #[napi(object)]

@@ -176,13 +176,13 @@ pub async fn run_quit(c: &mut dyn Container, opts: QuitOptions) -> Result<QuitRe
     // Snapshot inputs up front so we don't juggle simultaneous borrows of
     // `c` while running the loop. Arc clones are refcount bumps, cheap.
     let probe = c.core().probe.clone();
-    let matching: Vec<Arc<dyn Adapter>> = c
-        .core()
-        .adapters
-        .iter()
-        .filter(|a| a.matches(&probe))
-        .cloned()
-        .collect();
+    let all_adapters: Vec<Arc<dyn Adapter>> = c.core().adapters.clone();
+    let mut matching: Vec<Arc<dyn Adapter>> = Vec::with_capacity(all_adapters.len());
+    for adapter in &all_adapters {
+        if adapter.matches(&probe).await {
+            matching.push(adapter.clone());
+        }
+    }
     let stages: Vec<Arc<dyn Stage>> = c.core().stages.clone();
 
     let mut adapter_errors: Vec<String> = Vec::new();
@@ -542,7 +542,7 @@ mod tests {
         fn name(&self) -> &str {
             &self.name
         }
-        fn matches(&self, _probe: &Probe) -> bool {
+        async fn matches(&self, _probe: &Probe) -> bool {
             true
         }
         async fn before_quit(&self, _: &Probe, _: &dyn Container) -> Result<(), AdapterError> {
@@ -591,7 +591,7 @@ mod tests {
         fn name(&self) -> &str {
             &self.name
         }
-        fn matches(&self, _probe: &Probe) -> bool {
+        async fn matches(&self, _probe: &Probe) -> bool {
             true
         }
         async fn before_quit(&self, _: &Probe, _: &dyn Container) -> Result<(), AdapterError> {
@@ -609,7 +609,7 @@ mod tests {
         fn name(&self) -> &str {
             &self.name
         }
-        fn matches(&self, _probe: &Probe) -> bool {
+        async fn matches(&self, _probe: &Probe) -> bool {
             false
         }
         async fn before_quit(&self, _: &Probe, _: &dyn Container) -> Result<(), AdapterError> {

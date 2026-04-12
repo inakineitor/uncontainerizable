@@ -2,7 +2,7 @@
 
 This folder tracks versioning intent for the `uncontainerizable` and
 `@uncontainerizable/native` packages. The two packages are declared `linked` in
-`config.json`, so they always publish at the same version — mismatched versions
+`config.json`, so they always publish at the same version. Mismatched versions
 cause runtime `require` failures for consumers of the TS wrapper.
 
 ## Adding a changeset

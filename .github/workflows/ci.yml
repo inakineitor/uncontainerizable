@@ -39,7 +39,7 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: publint
-        run: pnpm -r run lint:package
+        run: pnpm run lint:package
 
   test-rust:
     name: Test Rust (${{ matrix.os }})

@@ -74,9 +74,14 @@ async fn identity_based_preemption_kills_predecessor() {
     // Give Windows time to complete the TerminateJobObject + process reap.
     tokio::time::sleep(Duration::from_millis(300)).await;
 
+    // The first container's JobObject handle is still open, so the job's
+    // name stays bound and the second spawn ends up sharing the same
+    // kernel object. `is_empty()` would see the second PID and return
+    // false. What we actually care about is: the *predecessor process*
+    // must be dead. Query it directly.
     assert!(
-        first.is_empty().await.unwrap(),
-        "predecessor should be dead after second spawn"
+        !pid_alive(first_pid),
+        "predecessor PID {first_pid} should be dead after second spawn"
     );
 
     let _ = second.destroy(DestroyOptions::default()).await;

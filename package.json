@@ -1,6 +1,7 @@
 {
   "name": "uncontainerizable-monorepo",
   "private": true,
+  "type": "module",
   "description": "Graceful process lifecycle for programs that can't be containerized",
   "scripts": {
     "build": "turbo run build",

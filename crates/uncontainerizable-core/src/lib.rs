@@ -15,7 +15,8 @@ pub mod probe;
 pub use adapter::Adapter;
 pub use app::{App, ContainOptions};
 pub use container::{
-    Container, DestroyOptions, DestroyResult, QuitOptions, QuitResult, StageResult,
+    BasicContainer, Container, ContainerCore, DestroyOptions, DestroyResult, QuitOptions,
+    QuitResult, Stage, StageResult, run_destroy, run_quit,
 };
 pub use error::{AdapterError, Error, PlatformError, ProbeError, Result, StageError};
 pub use probe::{Probe, SupportedPlatform};

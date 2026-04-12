@@ -9,7 +9,7 @@
 
 use std::time::Duration;
 
-use uncontainerizable_core::{App, ContainOptions, DestroyOptions};
+use uncontainerizable_core::{App, ContainOptions, DestroyOptions, QuitOptions};
 
 #[tokio::test]
 async fn test_child_terminates_at_terminate_job() {
@@ -154,6 +154,44 @@ async fn spawn_without_identity_does_not_touch_other_processes() {
 
     let mut first = first;
     let _ = first.destroy(DestroyOptions::default()).await;
+}
+
+#[tokio::test]
+async fn destroy_closes_job_even_when_terminal_stage_is_skipped() {
+    let app = App::new("test.win32.destroy_closes_job").unwrap();
+    let test_child = cargo_example_path("test-child.exe");
+
+    let mut container = app
+        .contain(
+            test_child.to_str().unwrap(),
+            ContainOptions {
+                identity: Some("skip-terminal".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("spawn test-child");
+    let pid = container.pid();
+
+    let result = container
+        .destroy(DestroyOptions {
+            quit: QuitOptions {
+                skip_stages: vec!["terminate_job".into()],
+                ..Default::default()
+            },
+        })
+        .await;
+
+    assert!(
+        result.errors.is_empty(),
+        "destroy surfaced errors: {:?}",
+        result.errors
+    );
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        !pid_alive(pid),
+        "closing the job handle during destroy should kill remaining members"
+    );
 }
 
 #[tokio::test]

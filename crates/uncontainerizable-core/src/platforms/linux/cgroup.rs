@@ -9,6 +9,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use nix::errno::Errno;
 use tokio::fs;
 use tokio::time::sleep;
 
@@ -154,35 +155,68 @@ async fn kill_and_remove_cgroup(path: &Path) -> Result<(), CgroupError> {
     // isn't present (older kernels or restricted hosts).
     let kill_file = path.join("cgroup.kill");
     if fs::metadata(&kill_file).await.is_ok() {
-        let _ = fs::write(&kill_file, "1").await;
+        write_if_present(&kill_file, "1").await?;
     } else {
-        let _ = fs::write(path.join("cgroup.freeze"), "1").await;
-        let procs = fs::read_to_string(path.join("cgroup.procs"))
-            .await
-            .unwrap_or_default();
+        write_if_present(&path.join("cgroup.freeze"), "1").await?;
+        let procs = match fs::read_to_string(path.join("cgroup.procs")).await {
+            Ok(procs) => procs,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(error) => return Err(CgroupError::Io(error)),
+        };
         for line in procs.lines() {
             if let Ok(pid) = line.trim().parse::<u32>() {
-                use nix::sys::signal::{Signal, kill};
-                use nix::unistd::Pid;
-                let _ = kill(Pid::from_raw(pid as i32), Signal::SIGKILL);
+                send_sigkill(pid)?;
             }
         }
-        let _ = fs::write(path.join("cgroup.freeze"), "0").await;
+        write_if_present(&path.join("cgroup.freeze"), "0").await?;
     }
 
-    // Wait for the cgroup to drain before rmdir.
+    wait_for_drain(path).await?;
+    match fs::remove_dir(path).await {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(CgroupError::Io(error)),
+    }
+    Ok(())
+}
+
+fn send_sigkill(pid: u32) -> Result<(), CgroupError> {
+    use nix::sys::signal::{Signal, kill};
+    use nix::unistd::Pid;
+
+    match kill(Pid::from_raw(pid as i32), Signal::SIGKILL) {
+        Ok(()) | Err(Errno::ESRCH) => Ok(()),
+        Err(error) => Err(CgroupError::Other(format!(
+            "failed to send SIGKILL to pid {pid}: {error}"
+        ))),
+    }
+}
+
+async fn wait_for_drain(path: &Path) -> Result<(), CgroupError> {
     let deadline = Instant::now() + REAP_TIMEOUT;
     while Instant::now() < deadline {
-        let events = fs::read_to_string(path.join("cgroup.events"))
-            .await
-            .unwrap_or_default();
-        if events.lines().any(|l| l == "populated 0") {
-            break;
+        match fs::read_to_string(path.join("cgroup.events")).await {
+            Ok(events) if events.lines().any(|line| line == "populated 0") => return Ok(()),
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(CgroupError::Io(error)),
         }
         sleep(POLL_INTERVAL).await;
     }
-    let _ = fs::remove_dir(path).await;
-    Ok(())
+
+    Err(CgroupError::Other(format!(
+        "cgroup {} did not drain within {}ms",
+        path.display(),
+        REAP_TIMEOUT.as_millis()
+    )))
+}
+
+async fn write_if_present(path: &Path, contents: &str) -> Result<(), CgroupError> {
+    match fs::write(path, contents).await {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(CgroupError::Io(error)),
+    }
 }
 
 async fn current_cgroup_path() -> Result<PathBuf, CgroupError> {

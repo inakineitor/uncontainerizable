@@ -5,16 +5,16 @@
 //!    `osascript`. Only fires when a bundle ID is available. AppKit handles
 //!    helper fanout: closing the root app asks children to shut down
 //!    cleanly.
-//! 2. `sigterm_tree`: SIGTERM delivered to the whole process tree via
-//!    `kill_tree`.
-//! 3. `sigkill_tree`: SIGKILL the whole tree. Terminal.
+//! 2. `sigterm_tree`: SIGTERM delivered to the dedicated process group.
+//! 3. `sigkill_tree`: SIGKILL the dedicated process group. Terminal.
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use kill_tree::Config;
-use kill_tree::tokio::kill_tree_with_config;
+use nix::errno::Errno;
+use nix::sys::signal::{Signal, kill};
+use nix::unistd::Pid;
 use tokio::process::Command;
 
 use crate::container::{Container, Stage};
@@ -74,14 +74,7 @@ impl Stage for SigTermTreeStage {
         Duration::from_secs(2)
     }
     async fn execute(&self, c: &dyn Container) -> Result<(), StageError> {
-        let _ = kill_tree_with_config(
-            c.pid(),
-            &Config {
-                signal: "SIGTERM".into(),
-                include_target: true,
-            },
-        )
-        .await?;
+        signal_process_group(c.pid(), Signal::SIGTERM)?;
         Ok(())
     }
 }
@@ -100,14 +93,14 @@ impl Stage for SigKillTreeStage {
         Duration::from_millis(500)
     }
     async fn execute(&self, c: &dyn Container) -> Result<(), StageError> {
-        let _ = kill_tree_with_config(
-            c.pid(),
-            &Config {
-                signal: "SIGKILL".into(),
-                include_target: true,
-            },
-        )
-        .await?;
+        signal_process_group(c.pid(), Signal::SIGKILL)?;
         Ok(())
+    }
+}
+
+fn signal_process_group(process_group: u32, signal: Signal) -> Result<(), StageError> {
+    match kill(Pid::from_raw(-(process_group as i32)), signal) {
+        Ok(()) | Err(Errno::ESRCH) => Ok(()),
+        Err(error) => Err(StageError::Signal(error)),
     }
 }

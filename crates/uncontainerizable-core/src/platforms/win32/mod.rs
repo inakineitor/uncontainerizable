@@ -103,12 +103,15 @@ pub async fn spawn(app: &App, command: &str, opts: ContainOptions) -> Result<Box
 /// `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`) kills any remaining survivors.
 pub struct WindowsContainer {
     core: ContainerCore,
-    job: Arc<JobObject>,
+    job: Option<Arc<JobObject>>,
 }
 
 impl WindowsContainer {
     pub fn new(core: ContainerCore, job: Arc<JobObject>) -> Self {
-        Self { core, job }
+        Self {
+            core,
+            job: Some(job),
+        }
     }
 }
 
@@ -123,18 +126,26 @@ impl Container for WindowsContainer {
     }
 
     async fn members(&self) -> Vec<u32> {
-        self.job.members().unwrap_or_default()
+        self.job
+            .as_ref()
+            .and_then(|job| job.members().ok())
+            .unwrap_or_default()
     }
 
     async fn is_empty(&self) -> std::result::Result<bool, StageError> {
-        Ok(self.job.members().map(|v| v.is_empty()).unwrap_or(true))
+        Ok(self
+            .job
+            .as_ref()
+            .and_then(|job| job.members().ok())
+            .is_none_or(|members| members.is_empty()))
     }
 
     async fn destroy_resources(&mut self) -> Vec<Error> {
-        // Closing the last handle to a named job releases the name and,
-        // via `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, terminates any member
-        // that somehow survived the terminal stage. The Arc-owned handle
-        // drops when both `self.job` and the terminal stage's clone go.
+        // Dropping both the container-held handle and the `TerminateJob`
+        // stage's clone deterministically releases the job here rather than
+        // waiting for the container object itself to be dropped later.
+        self.core.stages.clear();
+        let _ = self.job.take();
         Vec::new()
     }
 

@@ -5,6 +5,7 @@
 
 #![cfg(target_os = "macos")]
 
+use std::fs;
 use std::time::Duration;
 
 use uncontainerizable_core::{App, ContainOptions, DestroyOptions};
@@ -156,6 +157,65 @@ async fn spawn_without_identity_does_not_touch_other_processes() {
 }
 
 #[tokio::test]
+async fn destroy_kills_reparented_helper_after_root_exits() {
+    let app = App::new("test.reparented_helper").unwrap();
+    let marker = std::env::temp_dir().join(format!(
+        "uncontainerizable-darwin-child-{}-{}.pid",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let command = format!(
+        "sleep 30 & echo $! > {}; sleep 0.2",
+        shell_single_quote(&marker.to_string_lossy())
+    );
+    let mut container = app
+        .contain(
+            "sh",
+            ContainOptions {
+                args: vec!["-c".into(), command],
+                darwin_tag_argv0: false,
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("spawn sh");
+
+    tokio::time::sleep(Duration::from_millis(700)).await;
+
+    let child_pid = fs::read_to_string(&marker)
+        .expect("read child pid marker")
+        .trim()
+        .parse::<u32>()
+        .expect("parse child pid");
+
+    assert!(
+        !container.is_empty().await.unwrap(),
+        "helper should still keep the container populated after the root exits"
+    );
+    assert!(
+        container.members().await.contains(&child_pid),
+        "members should include the reparented helper pid"
+    );
+
+    let result = container.destroy(DestroyOptions::default()).await;
+    assert!(
+        result.errors.is_empty(),
+        "destroy surfaced errors: {:?}",
+        result.errors
+    );
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        !pid_alive(child_pid),
+        "destroy should kill the helper even after the root exited"
+    );
+
+    let _ = fs::remove_file(marker);
+}
+
+#[tokio::test]
 async fn invalid_prefix_rejected_at_app_construction() {
     assert!(App::new("").is_err());
     assert!(App::new("has space").is_err());
@@ -197,4 +257,8 @@ fn cargo_example_path(name: &str) -> std::path::PathBuf {
     p.push("examples");
     p.push(name);
     p
+}
+
+fn shell_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
 }

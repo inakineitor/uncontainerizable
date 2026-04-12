@@ -16,6 +16,7 @@ export { coreVersion } from "@uncontainerizable/native";
 export {
   appkit,
   chromium,
+  crashReporter,
   defaultAdapters,
   firefox,
 } from "#/adapters/index.js";

@@ -6,6 +6,7 @@ import {
   type Probe,
   appkit,
   chromium,
+  crashReporter,
   defaultAdapters,
   firefox,
 } from "uncontainerizable";
@@ -100,12 +101,37 @@ describe("firefox.matches", () => {
 });
 
 describe("defaultAdapters", () => {
-  test("bundles all three built-ins", () => {
+  test("bundles every built-in", () => {
     expect(defaultAdapters.map((a) => a.name)).toEqual([
       "chromium",
       "firefox",
       "appkit",
+      "crashReporter",
     ]);
+  });
+});
+
+describe("crashReporter.matches", () => {
+  test("matches darwin probes with an executable path", () => {
+    expect(
+      crashReporter.matches(
+        darwinProbe({
+          executablePath: "/Applications/TextEdit.app/Contents/MacOS/TextEdit",
+        })
+      )
+    ).toBe(true);
+  });
+
+  test("does not match when executablePath is missing", () => {
+    expect(crashReporter.matches(darwinProbe({ executablePath: null }))).toBe(
+      false
+    );
+  });
+
+  test("does not match non-darwin probes", () => {
+    expect(
+      crashReporter.matches(linuxProbe({ executablePath: "/usr/bin/sleep" }))
+    ).toBe(false);
   });
 });
 

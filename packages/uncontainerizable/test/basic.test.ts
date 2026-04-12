@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest";
 const VERSION_PATTERN = /^\d+\.\d+\.\d+/;
 const INVALID_IDENTITY_PATTERN = /INVALID_IDENTITY/;
 const UNSUPPORTED_PLATFORM_PATTERN = /UNSUPPORTED_PLATFORM/;
+const SUPPORTED_PLATFORMS = new Set(["darwin", "linux", "win32"]);
 
 describe("uncontainerizable", () => {
   test("coreVersion returns the Rust crate version string", () => {
@@ -45,7 +46,7 @@ describe.runIf(process.platform === "darwin")("App.contain on Darwin", () => {
   }, 20_000);
 });
 
-describe.runIf(process.platform !== "darwin")(
+describe.runIf(!SUPPORTED_PLATFORMS.has(process.platform))(
   "App.contain on unsupported platforms",
   () => {
     test("throws UNSUPPORTED_PLATFORM", async () => {

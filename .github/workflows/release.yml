@@ -24,28 +24,28 @@ jobs:
         settings:
           - host: macos-latest
             target: x86_64-apple-darwin
-            build: pnpm --filter @uncontainerizable/native exec napi build --platform --release --output-dir dist --js index.js --dts index.d.ts --target x86_64-apple-darwin
+            build: pnpm --filter @uncontainerizable/native exec napi build --platform --release --esm --output-dir dist --target x86_64-apple-darwin
           - host: macos-latest
             target: aarch64-apple-darwin
-            build: pnpm --filter @uncontainerizable/native exec napi build --platform --release --output-dir dist --js index.js --dts index.d.ts --target aarch64-apple-darwin
+            build: pnpm --filter @uncontainerizable/native exec napi build --platform --release --esm --output-dir dist --target aarch64-apple-darwin
           - host: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            build: pnpm --filter @uncontainerizable/native exec napi build --platform --release --output-dir dist --js index.js --dts index.d.ts --target x86_64-unknown-linux-gnu --use-napi-cross
+            build: pnpm --filter @uncontainerizable/native exec napi build --platform --release --esm --output-dir dist --target x86_64-unknown-linux-gnu --use-napi-cross
           - host: ubuntu-latest
             target: aarch64-unknown-linux-gnu
-            build: pnpm --filter @uncontainerizable/native exec napi build --platform --release --output-dir dist --js index.js --dts index.d.ts --target aarch64-unknown-linux-gnu --use-napi-cross
+            build: pnpm --filter @uncontainerizable/native exec napi build --platform --release --esm --output-dir dist --target aarch64-unknown-linux-gnu --use-napi-cross
           - host: ubuntu-latest
             target: x86_64-unknown-linux-musl
-            build: pnpm --filter @uncontainerizable/native exec napi build --platform --release --output-dir dist --js index.js --dts index.d.ts --target x86_64-unknown-linux-musl -x
+            build: pnpm --filter @uncontainerizable/native exec napi build --platform --release --esm --output-dir dist --target x86_64-unknown-linux-musl -x
           - host: ubuntu-latest
             target: aarch64-unknown-linux-musl
-            build: pnpm --filter @uncontainerizable/native exec napi build --platform --release --output-dir dist --js index.js --dts index.d.ts --target aarch64-unknown-linux-musl -x
+            build: pnpm --filter @uncontainerizable/native exec napi build --platform --release --esm --output-dir dist --target aarch64-unknown-linux-musl -x
           - host: windows-latest
             target: x86_64-pc-windows-msvc
-            build: pnpm --filter @uncontainerizable/native exec napi build --platform --release --output-dir dist --js index.js --dts index.d.ts --target x86_64-pc-windows-msvc
+            build: pnpm --filter @uncontainerizable/native exec napi build --platform --release --esm --output-dir dist --target x86_64-pc-windows-msvc
           - host: windows-latest
             target: aarch64-pc-windows-msvc
-            build: pnpm --filter @uncontainerizable/native exec napi build --platform --release --output-dir dist --js index.js --dts index.d.ts --target aarch64-pc-windows-msvc
+            build: pnpm --filter @uncontainerizable/native exec napi build --platform --release --esm --output-dir dist --target aarch64-pc-windows-msvc
     runs-on: ${{ matrix.settings.host }}
     steps:
       - uses: actions/checkout@v6

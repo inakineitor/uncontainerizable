@@ -1,4 +1,4 @@
-import { readdir, rm } from "node:fs/promises";
+import { readdir, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 
@@ -46,16 +46,15 @@ export const crashReporter: Adapter = {
       return;
     }
     const dir = join(homedir(), "Library", "Logs", "DiagnosticReports");
-    let entries: string[];
-    try {
-      entries = await readdir(dir);
-    } catch (err) {
-      // Directory may not exist on a fresh user account; nothing to clean.
-      if (isENOENT(err)) {
-        return;
-      }
-      throw err;
+    // `fs.stat` rejects if the path doesn't exist. A fresh user account
+    // may not have a DiagnosticReports directory, so probe first and
+    // short-circuit if it's missing or not a directory. Swallowing the
+    // reject into `undefined` keeps the happy path straight-line.
+    const stats = await stat(dir).catch(() => undefined);
+    if (!stats?.isDirectory()) {
+      return;
     }
+    const entries = await readdir(dir);
     const prefix = `${appName}_`;
     const removals = entries
       .filter(
@@ -67,12 +66,3 @@ export const crashReporter: Adapter = {
     await Promise.all(removals);
   },
 };
-
-function isENOENT(err: unknown): boolean {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    "code" in err &&
-    (err as { code: unknown }).code === "ENOENT"
-  );
-}

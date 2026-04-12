@@ -41,6 +41,31 @@ importers:
       publint:
         specifier: ^0.3
         version: 0.3.18
+    optionalDependencies:
+      '@uncontainerizable/native-darwin-arm64':
+        specifier: 0.0.1
+        version: 0.0.1
+      '@uncontainerizable/native-darwin-x64':
+        specifier: 0.0.1
+        version: 0.0.1
+      '@uncontainerizable/native-linux-arm64-gnu':
+        specifier: 0.0.1
+        version: 0.0.1
+      '@uncontainerizable/native-linux-arm64-musl':
+        specifier: 0.0.1
+        version: 0.0.1
+      '@uncontainerizable/native-linux-x64-gnu':
+        specifier: 0.0.1
+        version: 0.0.1
+      '@uncontainerizable/native-linux-x64-musl':
+        specifier: 0.0.1
+        version: 0.0.1
+      '@uncontainerizable/native-win32-arm64-msvc':
+        specifier: 0.0.1
+        version: 0.0.1
+      '@uncontainerizable/native-win32-x64-msvc':
+        specifier: 0.0.1
+        version: 0.0.1
 
   packages/tsconfig: {}
 
@@ -1248,6 +1273,58 @@ packages:
 
   '@types/node@24.12.2':
     resolution: {integrity: sha512-A1sre26ke7HDIuY/M23nd9gfB+nrmhtYyMINbjI1zHJxYteKR6qSMX56FsmjMcDb3SMcjJg5BiRRgOCC/yBD0g==}
+
+  '@uncontainerizable/native-darwin-arm64@0.0.1':
+    resolution: {integrity: sha512-amNlseMTqYG4w/4tc9ZRUrscZfWVnn4IEkJ1jElDCtRgVYzAVg2v4da6GIHawSEtNnzrlTO1OJn6yp5SVteWnw==}
+    engines: {node: '>=24'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@uncontainerizable/native-darwin-x64@0.0.1':
+    resolution: {integrity: sha512-zQMRKtWGwC3N/cs43MUHwx106mhrpvzGJ7Jfy3CzyWJW1/OlDHOPIGDxVJ7tlvoXdYHfPXeYfSlln95iUJSVEg==}
+    engines: {node: '>=24'}
+    cpu: [x64]
+    os: [darwin]
+
+  '@uncontainerizable/native-linux-arm64-gnu@0.0.1':
+    resolution: {integrity: sha512-cyksZNLfST1wm50cpKmFN3pKkMNTeIZV/L+rtsXlMBXs0He9wp1elqN/aM7mYKdWqrmwl/vyT+Jn1DJ6URQb+Q==}
+    engines: {node: '>=24'}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@uncontainerizable/native-linux-arm64-musl@0.0.1':
+    resolution: {integrity: sha512-XlPL45BnTFGq1F/XYrEWUD5l5g1D0vPKQdtbXo7yjYUVGA0bONsnRj6GraeGaJPCs0siapGQtewIcxodUp/n3g==}
+    engines: {node: '>=24'}
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  '@uncontainerizable/native-linux-x64-gnu@0.0.1':
+    resolution: {integrity: sha512-00DPvmq0luzrfpyyxfqxbcuEnbq37TpwG1CgtnQfynLWM7TQPQRtJ/57cfl34tYpjplDQYkovBsF61sA9x6kWQ==}
+    engines: {node: '>=24'}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@uncontainerizable/native-linux-x64-musl@0.0.1':
+    resolution: {integrity: sha512-LjR4usVqKm67QRunpduh54WnutEps6b1VkAfbmbs29zTB/MJSy5u7ZfZuRSt6a0E39m8lfVot0EJvX8SEQ4Gew==}
+    engines: {node: '>=24'}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  '@uncontainerizable/native-win32-arm64-msvc@0.0.1':
+    resolution: {integrity: sha512-QkfeKOxc6I+f5cJiZ/LJQY4vA0n+Mo6Ib2rt0s8bG4ld5eufccfmiS5uTxjoxn/YBaZ0NNkS0Faw2idyR7QLTw==}
+    engines: {node: '>=24'}
+    cpu: [arm64]
+    os: [win32]
+
+  '@uncontainerizable/native-win32-x64-msvc@0.0.1':
+    resolution: {integrity: sha512-rRv7Q5UmTvjXwepWzyMBJlo09l4CukR1LBbYvIJ6H7/DUjsBCJcB2AZwefYozYmI1qDAeHlXxhTcLUrfW2gY1w==}
+    engines: {node: '>=24'}
+    cpu: [x64]
+    os: [win32]
 
   '@vitest/expect@4.1.4':
     resolution: {integrity: sha512-iPBpra+VDuXmBFI3FMKHSFXp3Gx5HfmSCE8X67Dn+bwephCnQCaB7qWK2ldHa+8ncN8hJU8VTMcxjPpyMkUjww==}
@@ -3418,6 +3495,30 @@ snapshots:
   '@types/node@24.12.2':
     dependencies:
       undici-types: 7.16.0
+
+  '@uncontainerizable/native-darwin-arm64@0.0.1':
+    optional: true
+
+  '@uncontainerizable/native-darwin-x64@0.0.1':
+    optional: true
+
+  '@uncontainerizable/native-linux-arm64-gnu@0.0.1':
+    optional: true
+
+  '@uncontainerizable/native-linux-arm64-musl@0.0.1':
+    optional: true
+
+  '@uncontainerizable/native-linux-x64-gnu@0.0.1':
+    optional: true
+
+  '@uncontainerizable/native-linux-x64-musl@0.0.1':
+    optional: true
+
+  '@uncontainerizable/native-win32-arm64-msvc@0.0.1':
+    optional: true
+
+  '@uncontainerizable/native-win32-x64-msvc@0.0.1':
+    optional: true
 
   '@vitest/expect@4.1.4':
     dependencies:

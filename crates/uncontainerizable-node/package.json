@@ -28,7 +28,7 @@
     "dist/**"
   ],
   "scripts": {
-    "artifacts": "napi artifacts --npm-dir npm",
+    "artifacts": "napi create-npm-dirs && napi artifacts --npm-dir npm",
     "build": "napi build --platform --release --output-dir dist --js index.js --dts index.d.ts",
     "build:native": "napi build --platform --release --output-dir dist --js index.js --dts index.d.ts",
     "build:debug": "napi build --platform --output-dir dist --js index.js --dts index.d.ts",

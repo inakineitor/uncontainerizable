@@ -1,88 +1,213 @@
 # uncontainerizable
 
-Graceful process lifecycle for programs that cannot be put in real containers:
-browsers, GUI apps, and tools that need the user's window server, keychain, or
-display. Rust core with async APIs plus Node bindings via napi-rs.
+> Graceful process lifecycle for programs that can't be put in real containers.
 
-See [`documents/development-plan.md`](./documents/development-plan.md) for the
-full design and rationale.
+A supervisor library for the apps you can't put in Docker: browsers, GUI
+apps, and anything that needs the user's window server, keychain, or
+display. Ships as a pure-Rust core plus Node bindings via
+[napi-rs](https://napi.rs), so you can drive it from either runtime.
 
-## Repository layout
+If the program can run in a real sandbox — namespaces, seccomp, landlock —
+use a real container runtime. `uncontainerizable` is for everything else.
 
-```
-crates/uncontainerizable-core/   # Pure Rust library (the engine)
-crates/uncontainerizable-node/   # napi-rs bindings (published as @uncontainerizable/native)
-packages/uncontainerizable/      # TypeScript wrapper (published as uncontainerizable)
-packages/tsconfig/               # Shared TS config (workspace-private)
-```
+> [!NOTE]
+> See [`documents/development-plan.md`](./documents/development-plan.md) for the
+> authoritative design, invariants, and per-platform mechanisms.
 
-## Platform support
+## Features
 
-| Platform          | Preemption mechanism | Stages                            |
-| ----------------- | -------------------- | --------------------------------- |
-| Linux (x64/arm)   | cgroup v2            | SIGTERM then SIGKILL (cgroup freeze) |
-| macOS (x64/arm)   | argv[0] tag scanning | aevt/quit then SIGTERM then SIGKILL  |
-| Windows (x64/arm) | named Job Object     | WM_CLOSE then TerminateJobObject     |
+- **Staged quit ladder.** Each platform escalates from its polite quit
+  channel to a guaranteed kill, with per-stage timeouts and skippable
+  stages.
+- **Tree-aware teardown.** Helper processes get reaped alongside the root;
+  the container is "empty" only when no member remains.
+- **Identity-based singleton.** At most one container per identity is
+  alive at any time; spawning preempts any predecessor using kernel
+  primitives on Linux and Windows.
+- **Adapter hooks.** Per-app lifecycle callbacks (`beforeQuit`,
+  `beforeStage`, `afterStage`, `afterQuit`, `clearCrashState`) suppress
+  "didn't shut down correctly" dialogs after force-kill.
+- **Infallible destroy.** `destroy()` aggregates errors into the result
+  so `finally` blocks never throw.
+- **Async first.** Tokio-based core, `Promise`-based wrapper.
 
-Linux musl is supported via `cargo-zigbuild` cross-compilation.
+## How it works
 
-## Prerequisites
+| Platform          | Preemption primitive | Quit ladder                                |
+| ----------------- | -------------------- | ------------------------------------------ |
+| Linux (x64/arm64) | cgroup v2            | `SIGTERM` → `SIGKILL` (race-free via freeze) |
+| macOS (x64/arm64) | `argv[0]` tag scan   | `aevt/quit` → `SIGTERM` → `SIGKILL`          |
+| Windows (x64/arm64) | named Job Object   | `WM_CLOSE` → `TerminateJobObject`            |
 
-- Rust (pinned via `rust-toolchain.toml` to the current stable channel with
-  `rustfmt` and `clippy`)
-- Node.js ≥ 24 (current LTS)
-- pnpm ≥ 10 (version declared in `packageManager`)
+Linux musl is supported via `cargo-zigbuild` cross-compilation. Identity
+strings are namespaced by an app-level prefix (conventionally reverse-DNS)
+so libraries using `uncontainerizable` cannot collide.
 
-## Build
+## Installation
 
 ```sh
-pnpm install          # Install JS/TS dependencies
-pnpm build            # Full build: native bindings first, then TS wrapper
-pnpm build:native     # Just the napi-rs native bindings
-pnpm build:ts         # Just the TS wrapper (requires native built first)
+npm install uncontainerizable
+# or
+pnpm add uncontainerizable
+# or
+yarn add uncontainerizable
 ```
 
-## Test
+The package depends on `@uncontainerizable/native`, which ships a
+prebuilt `.node` binary per supported target. No native toolchain is
+required at install time.
+
+> [!IMPORTANT]
+> Node.js ≥ 24 is required (current LTS). The TS wrapper targets
+> `node24` via tsdown and uses ESM only.
+
+## Quick start
+
+```ts
+import { App, defaultAdapters } from "uncontainerizable";
+
+const app = new App("com.example.my-supervisor");
+
+const container = await app.contain("chromium", {
+  args: ["--user-data-dir=/tmp/browser-profile"],
+  identity: "browser-main", // preempts any previous "browser-main"
+  adapters: [...defaultAdapters],
+});
+
+// ... later, when you want to shut it down cleanly:
+const result = await container.destroy();
+
+if (result.errors.length > 0) {
+  console.warn("teardown surfaced recoverable errors:", result.errors);
+}
+
+console.log(`exited at ${result.quit.exitedAtStage}`);
+```
+
+A second call to `app.contain(..., { identity: "browser-main" })` will
+kill the running instance before launching the new one. Omit `identity`
+to skip preemption entirely.
+
+## Built-in adapters
+
+`uncontainerizable` ships a handful of adapters for common supervised
+programs. They match by probe (bundle ID, executable path, platform) and
+only their `clearCrashState` hook runs after a terminal-stage teardown.
+
+| Adapter         | Purpose                                                                 |
+| --------------- | ----------------------------------------------------------------------- |
+| `appkit`        | Deletes AppKit's "Saved Application State" directory on macOS.          |
+| `crashReporter` | Clears per-app entries from macOS's user-level CrashReporter archive.   |
+| `chromium`      | Matches Chrome/Chromium/Brave/Edge. Crash-state cleanup is stubbed.     |
+| `firefox`       | Matches Firefox. Crash-state cleanup is stubbed.                        |
+
+Import individually or as a bundle:
+
+```ts
+import {
+  appkit,
+  chromium,
+  crashReporter,
+  defaultAdapters,
+  firefox,
+} from "uncontainerizable";
+```
+
+## Custom adapters
+
+An adapter is any object that matches the `Adapter` shape. Every hook
+except `name` and `matches` is optional; unimplemented hooks are skipped.
+Hooks may be sync or async — the wrapper normalizes both forms before
+crossing the napi boundary.
+
+```ts
+import type { Adapter } from "uncontainerizable";
+
+const logger: Adapter = {
+  name: "logger",
+  matches: () => true,
+  beforeStage(probe, stageName) {
+    console.log(`[${probe.pid}] entering stage ${stageName}`);
+  },
+  afterStage(_probe, result) {
+    if (result.exited) {
+      console.log(`drained at ${result.stageName}`);
+    }
+  },
+};
+```
+
+> [!TIP]
+> Adapter hooks are **advisory**: errors are collected into
+> `QuitResult.adapterErrors` and never abort the quit ladder. A misbehaving
+> adapter cannot prevent teardown.
+
+## Rust usage
+
+```toml
+# Cargo.toml
+[dependencies]
+uncontainerizable-core = { git = "https://github.com/inakineitor/uncontainerizable" }
+tokio = { version = "1", features = ["full"] }
+```
+
+```rust
+use uncontainerizable::{App, ContainOptions, DestroyOptions};
+
+let app = App::new("com.example.my-supervisor")?;
+let mut container = app.contain("chromium", ContainOptions {
+    identity: Some("browser-main".into()),
+    ..Default::default()
+}).await?;
+
+let result = container.destroy(DestroyOptions::default()).await;
+```
+
+The core crate is not published to crates.io yet; depend on it from git
+while the API stabilizes.
+
+## Workspace layout
+
+```
+crates/
+  uncontainerizable-core/   # Pure Rust engine (not published)
+  uncontainerizable-node/   # napi-rs bindings → @uncontainerizable/native
+packages/
+  uncontainerizable/        # TypeScript wrapper → uncontainerizable
+  tsconfig/                 # Shared TS config (workspace-private)
+```
+
+`uncontainerizable` and `@uncontainerizable/native` are linked in
+Changesets and always publish at the same version. Mismatches break
+`require`/`import` of the wrapper.
+
+## Development
+
+Prerequisites: Rust (pinned via `rust-toolchain.toml`), Node.js ≥ 24,
+pnpm ≥ 10.
 
 ```sh
-pnpm test             # Vitest across TS packages
+pnpm install              # install JS/TS dependencies
+pnpm build                # full build: native bindings, then TS wrapper
+pnpm build:native         # only the napi-rs build
+pnpm build:ts             # only the TS wrapper
+pnpm test                 # Vitest across TS packages
+pnpm typecheck            # tsc --noEmit per package
+pnpm lint                 # Ultracite (TS/JS/JSON)
+pnpm lint:fix
+pnpm lint:rust            # cargo fmt --check + cargo clippy -D warnings
 cargo test --workspace --exclude uncontainerizable-node
 ```
 
-The `uncontainerizable-node` crate is a `cdylib`, which `cargo test` can't
-execute directly. Its behavior is verified through the Vitest suite against
-the built `.node` binary.
+> [!WARNING]
+> `build:native` must run before `build:ts` on a fresh install. The TS
+> wrapper's `@uncontainerizable/native` dependency resolves to the built
+> `.node` loader at `crates/uncontainerizable-node/dist/`, not a stub.
 
-## Lint and format
+Lefthook wires `rustfmt`, `clippy`, and Ultracite into `pre-commit`, and
+commitlint validates Conventional Commits on `commit-msg`.
 
-Biome (via Ultracite) handles TS/JS/JSON/CSS. Rust uses `rustfmt` and
-`clippy`. Lefthook wires both into `pre-commit`; `commit-msg` validates
-conventional commits via commitlint.
-
-```sh
-pnpm lint             # Ultracite check (TS/JS/JSON)
-pnpm lint:fix         # Ultracite fix
-pnpm lint:rust        # cargo fmt --check + cargo clippy -D warnings
-```
-
-## TypeScript conventions
-
-The TS wrapper is configured for TypeScript 6+ and uses the
-[subpath imports](https://devblogs.microsoft.com/typescript/announcing-typescript-6-0/)
-pattern introduced in TS 6.0:
-
-- `#/*` maps to `./src/*` via the `imports` field in `package.json`, so internal
-  modules use `import { X } from "#/types.js"` rather than brittle relative
-  paths.
-- `moduleResolution: "NodeNext"` (TS 6.0 deprecates the legacy `"node"` mode).
-- `types: ["node"]` is declared explicitly per TS 6.0's new default of `[]`.
-- `target` and `lib` set to `ESNext`; runtime API surface is fenced by
-  `@types/node` + `engines.node` (`>=24`) + CI rather than a narrower `lib`.
-  tsdown (rolldown) handles the actual emit and has its own `target: "node24"`.
-- `verbatimModuleSyntax: true` and `moduleDetection: "force"` for clean ESM
-  emit; `esModuleInterop: true` (TS 6.0 no longer allows `false`).
-
-## Release
+## Releasing
 
 Changesets drives versioning. Add a changeset alongside your PR:
 
@@ -90,16 +215,12 @@ Changesets drives versioning. Add a changeset alongside your PR:
 pnpm changeset
 ```
 
-`uncontainerizable` and `@uncontainerizable/native` are `linked` so they always
-publish at the same version. Mismatches break `require`/`import` of the wrapper.
+Pushing to `main` runs [`release.yml`](./.github/workflows/release.yml):
 
-Pushing to `main` triggers `.github/workflows/release.yml`:
-
-1. Build native binaries across all target triples in parallel.
-2. Upload `.node` artifacts per target.
-3. `napi artifacts` assembles the per-platform npm packages.
-4. `changesets/action` either opens a "Version Packages" PR or publishes.
+1. Builds native binaries across all target triples in parallel.
+2. Assembles per-platform npm packages via `napi artifacts`.
+3. Opens a "Version Packages" PR or publishes via `changesets/action`.
 
 ## License
 
-MIT. See [`LICENSE`](./LICENSE).
+[MIT](./LICENSE)

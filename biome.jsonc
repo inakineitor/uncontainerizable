@@ -8,6 +8,8 @@
       "!**/target",
       "!**/node_modules",
       "!**/.turbo",
+      "!**/.agents",
+      "!**/.claude",
       "!**/*.d.ts",
       "!**/*.d.mts",
       "!**/*.d.cts",

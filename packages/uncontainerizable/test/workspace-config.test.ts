@@ -13,16 +13,30 @@ function readText(relativePath: string): Promise<string> {
 }
 
 describe("workspace config regressions", () => {
-  test("native optional dependency versions stay aligned with the package version", async () => {
+  test("release workflow matrix matches napi.targets", async () => {
+    // `napi.targets` is the single source of truth for per-platform
+    // binaries. `napi prepublish` reads it at publish time to generate
+    // optionalDependencies for the main package (source-controlled
+    // optionalDependencies were removed for that reason — they'd drift
+    // forever vs the published state).
+    //
+    // The release workflow has to build a binary for each target in
+    // that list, or the published optionalDependencies point at
+    // packages whose .node files never shipped. That silent mismatch
+    // is the real regression risk; this test catches it by asserting
+    // every entry in napi.targets shows up as a `--target <triple>`
+    // in the release workflow's `build` commands.
     const nativePackage = (await readJson(
       "../../../crates/uncontainerizable-node/package.json"
     )) as {
-      optionalDependencies: Record<string, string>;
-      version: string;
+      napi: { targets: string[] };
     };
+    const releaseWorkflow = await readText(
+      "../../../.github/workflows/release.yml"
+    );
 
-    for (const version of Object.values(nativePackage.optionalDependencies)) {
-      expect(version).toBe(nativePackage.version);
+    for (const target of nativePackage.napi.targets) {
+      expect(releaseWorkflow).toContain(`--target ${target}`);
     }
   });
 

@@ -31,8 +31,13 @@ impl NodeApp {
         self.inner.prefix().to_string()
     }
 
-    /// Spawn a contained process. If `opts.identity` is set, any previous
-    /// instance with the same prefix + identity is killed first.
+    /// Spawn a contained process. If `opts.identity` is set, a prior
+    /// matching instance is killed first. On macOS Launch Services `.app`
+    /// launches, matching is bundle-scoped rather than `prefix + identity`
+    /// scoped, so this route cannot keep two instances of the same app
+    /// alive concurrently. If the app itself supports multiple concurrent
+    /// instances, pass the inner executable path
+    /// (`Foo.app/Contents/MacOS/Foo`) to use the direct-exec route.
     #[napi]
     pub async fn contain(
         &self,
@@ -58,7 +63,8 @@ impl NodeApp {
             env: opts.env.unwrap_or_default().into_iter().collect(),
             cwd: opts.cwd.map(PathBuf::from),
             adapters,
-            // Default `true` on Darwin so identity preemption actually works.
+            // Default `true` on Darwin so direct-exec identity preemption
+            // works. Launch Services `.app` launches ignore argv tagging.
             darwin_tag_argv0: opts.darwin_tag_argv0.unwrap_or(true),
             identity: opts.identity,
         };

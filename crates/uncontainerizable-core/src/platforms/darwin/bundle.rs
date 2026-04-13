@@ -8,14 +8,23 @@
 //! saved state, the `-n` flag forces a new instance past any stale PSN
 //! LS kept from a killed predecessor).
 //!
-//! argv[0] tagging doesn't work on this path because LS rewrites argv.
-//! Identity preemption uses a PID file per combined-identity under
-//! `~/Library/Caches/uncontainerizable/`. The file stores the last
-//! spawned PID; on subsequent spawns with the same identity we read
-//! the file, verify the PID is still alive *and* its executable still
-//! matches this bundle (to avoid killing an unrelated process that
-//! inherited the PID), then SIGKILL its tree. This mechanism survives
-//! supervisor crashes because the file outlives us.
+//! argv[0] tagging doesn't work on this path because LS rewrites argv,
+//! and macOS `ps -E` hides the environment from non-root callers, so
+//! neither of the per-launch tagging schemes we use on other platforms
+//! can round-trip through LS. The only signal for "is a matching
+//! instance running right now" that survives an external launch is
+//! `ps comm=` against the bundle's main-exec path.
+//!
+//! This makes identity preemption on the LS route a **singleton
+//! switch**: when the caller passes an identity on a bundle launch we
+//! scan `ps` for every process whose executable is
+//! `<bundle>/Contents/MacOS/<CFBundleExecutable>` and SIGKILL each
+//! tree — regardless of which identity (if any) started them. Two
+//! concurrent LS launches of the same `.app` with different identities
+//! cannot coexist; the second will terminate the first. Callers that
+//! need multiple concurrent instances of a bundle should pass the
+//! inner executable path to route through direct-exec, which does
+//! keep per-identity tagging via argv[0].
 //!
 //! An earlier design used `UNCONTAINERIZABLE_IDENTITY=<combined>` env
 //! variable tagging parsed via `ps -E`. On macOS the `-E` flag does
@@ -42,10 +51,10 @@ use crate::error::BundleError;
 
 const PLIST_BUDDY: &str = "/usr/libexec/PlistBuddy";
 const PID_POLL_INTERVAL: Duration = Duration::from_millis(100);
-
-/// Directory under the user's cache tree that holds per-identity PID
-/// files for bundle launches. Created on demand.
-const PIDFILE_DIR: &str = "Library/Caches/uncontainerizable";
+/// Grace period for LS/kernel to fully reap a SIGKILL'd app before we
+/// launch the replacement. Without it the post-launch PID poll can see
+/// the old PID briefly and misinterpret it as the new instance.
+const REAP_SETTLE: Duration = Duration::from_millis(300);
 
 /// Plist fields we care about. Narrow on purpose: other keys aren't
 /// needed for launching.
@@ -130,110 +139,33 @@ async fn read_plist_field(plist: &Path, field: &'static str) -> Result<String, B
     Ok(value)
 }
 
-/// Resolve the per-identity PID file path.
-/// Returns `None` if `$HOME` isn't set (shouldn't happen on macOS but
-/// we handle it rather than panic).
-pub fn identity_pidfile(combined_identity: &str) -> Option<PathBuf> {
-    let home = std::env::var_os("HOME")?;
-    let sanitized = sanitize_identity(combined_identity);
-    Some(
-        PathBuf::from(home)
-            .join(PIDFILE_DIR)
-            .join(format!("{sanitized}.pid")),
-    )
-}
-
-/// Replace filesystem-hostile characters in a combined identity (which
-/// is `<prefix>:<identity>` using dots, colons, slashes) with `.`. Keeps
-/// the identity human-readable while guaranteeing a flat filename.
-fn sanitize_identity(combined: &str) -> String {
-    combined
-        .chars()
-        .map(|c| match c {
-            '/' | ':' | '\\' | '\0' => '.',
-            c => c,
-        })
-        .collect()
-}
-
-/// Kill any running predecessor registered for this identity. Reads the
-/// PID file, verifies the PID is still alive AND its executable still
-/// matches the bundle (guards against PID reuse after a crash), then
-/// SIGKILLs the whole tree. Best-effort: file missing, stale PID, or
-/// mismatched executable all produce a silent no-op.
+/// Kill every running instance of the bundle's main executable, not
+/// just ones this supervisor launched.
 ///
-/// The file is not deleted here — `spawn_bundle` overwrites it with
-/// the new PID after a successful launch, so the write is what
-/// "commits" the handoff.
-pub async fn kill_existing_by_pidfile(
-    combined_identity: &str,
-    executable_path: &Path,
-) -> std::io::Result<()> {
-    let Some(pidfile) = identity_pidfile(combined_identity) else {
-        return Ok(());
-    };
-    let raw = match fs::read_to_string(&pidfile).await {
-        Ok(s) => s,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => return Err(e),
-    };
-    let Ok(pid) = raw.trim().parse::<u32>() else {
-        return Ok(());
-    };
-    if !pid_exec_matches(pid, executable_path).await {
-        // Stale PID file: the old process is gone, or the PID was
-        // reused by something unrelated. Leave alone and let the fresh
-        // spawn overwrite the file.
-        return Ok(());
+/// Best-effort: `ps` or `kill_tree` failures are swallowed because
+/// preemption is not allowed to block a fresh spawn. A surviving
+/// predecessor at worst means two instances coexist for a moment,
+/// which `open -n` handles via its forced-new-instance semantics.
+pub async fn kill_existing_bundle_instances(executable_path: &Path) {
+    let pids = snapshot_bundle_pids(executable_path).await;
+    if pids.is_empty() {
+        return;
     }
-    let _ = kill_tree_with_config(
-        pid,
-        &Config {
-            signal: "SIGKILL".into(),
-            include_target: true,
-        },
-    )
-    .await;
-    Ok(())
-}
-
-/// `true` iff `pid` is alive and its executable (via `ps comm=`) is an
-/// exact match for `expected`. Used to reject stale PID files before
-/// signalling so we don't kill an unrelated process that inherited a
-/// reused PID.
-async fn pid_exec_matches(pid: u32, expected: &Path) -> bool {
-    let Ok(output) = Command::new("ps")
-        .args(["-p", &pid.to_string(), "-o", "comm="])
-        .output()
-        .await
-    else {
-        return false;
-    };
-    if !output.status.success() {
-        return false;
+    for &pid in &pids {
+        let _ = kill_tree_with_config(
+            pid,
+            &Config {
+                signal: "SIGKILL".into(),
+                include_target: true,
+            },
+        )
+        .await;
     }
-    let target = expected.to_string_lossy();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    stdout
-        .lines()
-        .next()
-        .map(|l| l.trim() == target)
-        .unwrap_or(false)
-}
-
-/// Atomically record the PID for `combined_identity`. Writes to a
-/// tempfile under the same directory and renames over the final path
-/// so readers never see a half-written file.
-pub async fn write_pidfile(combined_identity: &str, pid: u32) -> std::io::Result<()> {
-    let Some(pidfile) = identity_pidfile(combined_identity) else {
-        return Ok(());
-    };
-    if let Some(parent) = pidfile.parent() {
-        fs::create_dir_all(parent).await?;
-    }
-    let tmp = pidfile.with_extension("pid.tmp");
-    fs::write(&tmp, pid.to_string().as_bytes()).await?;
-    fs::rename(&tmp, &pidfile).await
+    // Give the kernel a moment to reap the signalled processes. Without
+    // this, `resolve_new_pid` may briefly see the SIGKILL'd PID (still
+    // in the process table mid-reap) and either mistake it for the new
+    // instance or burn poll iterations waiting for it to disappear.
+    sleep(REAP_SETTLE).await;
 }
 
 /// Collect the current set of PIDs whose `ps comm=` matches
@@ -311,31 +243,5 @@ mod tests {
     #[test]
     fn is_app_bundle_rejects_missing_paths() {
         assert!(!is_app_bundle("/does/not/exist/TotallyMissing.app"));
-    }
-
-    #[test]
-    fn sanitize_identity_replaces_path_separators_and_colons() {
-        assert_eq!(
-            sanitize_identity("com.example.app:browser-main"),
-            "com.example.app.browser-main"
-        );
-        assert_eq!(sanitize_identity("a/b:c\\d"), "a.b.c.d");
-    }
-
-    #[test]
-    fn sanitize_identity_preserves_safe_characters() {
-        assert_eq!(sanitize_identity("com.example.app"), "com.example.app");
-        assert_eq!(sanitize_identity("abc-def_123"), "abc-def_123");
-    }
-
-    #[test]
-    fn identity_pidfile_lands_under_home() {
-        let Some(path) = identity_pidfile("com.example:run") else {
-            // HOME not set in CI container; skip.
-            return;
-        };
-        let s = path.to_string_lossy();
-        assert!(s.contains("Library/Caches/uncontainerizable"));
-        assert!(s.ends_with("com.example.run.pid"));
     }
 }

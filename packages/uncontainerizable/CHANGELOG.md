@@ -1,5 +1,20 @@
 # uncontainerizable
 
+## 0.1.2
+
+### Patch Changes
+
+- 05be3e0: Fix Launch Services bundle preemption so it also kills externally-launched instances of the bundle. Previously, passing an `identity` on a `.app` launch only terminated processes this supervisor had spawned itself (via a per-identity PID file). A Photoshop opened by double-click or another tool stayed alive when you asked uncontainerizable to launch a fresh one, which contradicted the "clean slate" intent of `identity`.
+
+  Bundle preemption now scans `ps` for every process whose executable matches the bundle's main-exec path (`<bundle>/Contents/MacOS/<CFBundleExecutable>`) and SIGKILLs each tree before `open -n` fires. Launches without `identity` are unchanged: no preemption, instances coexist. The PID-file mechanism in `~/Library/Caches/uncontainerizable/` is gone; `ps` is now the single source of truth.
+
+  PID resolution also takes a fresh post-preemption snapshot immediately before `open` launches the replacement. That prevents the resolver from attaching to a surviving or concurrently-started old instance that appeared during the reap-settle window.
+
+  Tradeoff worth noting: two distinct identities for the same bundle can no longer coexist on this path. That was never a supported use case, but it's spelled out in the module docs now.
+
+- Updated dependencies [05be3e0]
+  - @uncontainerizable/native@0.1.2
+
 ## 0.1.1
 
 ### Patch Changes
@@ -22,7 +37,7 @@
 
   Any other path (including executables inside a bundle like `Foo.app/Contents/MacOS/Foo`) continues through the existing direct-exec path, unchanged. Detection is purely based on path shape — no walking up to find an enclosing bundle, no new `ContainOptions` flag.
 
-  Identity preemption on the Launch Services path is PID-file based under `~/Library/Caches/uncontainerizable/`. The file stores the last spawned PID per identity and is checked + overwritten on each spawn, so it survives supervisor crashes.
+  Identity preemption on the Launch Services path is bundle-scoped: the library scans `ps` for every process whose executable matches the bundle's main executable path and kills each matching tree before `open -n` launches the replacement.
 
 ### Patch Changes
 

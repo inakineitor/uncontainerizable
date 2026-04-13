@@ -56,7 +56,7 @@ Per the dev plan, `platforms::spawn(app, command, opts)` is the single entry poi
 
 - **Linux**: cgroup v2 at `{session}/uncontainerizable/{identity}/`. Identity preemption uses `mkdir` atomicity; teardown uses `cgroup.freeze` for race-free SIGKILL.
 - **Windows**: Named Job Object `Local\uncontainerizable-{identity}`. `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` guarantees cleanup if the supervisor dies.
-- **macOS**: Best-effort via `argv[0]` tagging (`uncontainerizable:{identity}/original-name`). Caller can opt out via `ContainOptions.darwin_tag_argv0 = false`.
+- **macOS**: Direct-exec is best-effort via `argv[0]` tagging (`uncontainerizable:{identity}/original-name`), and callers can opt out via `ContainOptions.darwin_tag_argv0 = false`. Launch Services `.app` launches instead use bundle-scoped preemption via `ps comm=` against the bundle executable path, so they cannot keep two instances of the same bundle alive concurrently. Use the inner executable path only if the app itself supports concurrent instances.
 
 Adapter hooks are **advisory**: errors are collected into the final result, never abort escalation. `destroy()` is infallible (never throws; aggregates errors). See `documents/development-plan.md` "Invariants" for the full list.
 

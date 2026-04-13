@@ -6,10 +6,33 @@
 //!   `command` is a `.app` directory. We shell out to
 //!   `open -n -F -a <bundle>` so the app is properly registered with
 //!   `launchservicesd` (Dock, Apple Events, fresh saved state).
-//!   Identity preemption is PID-file based under `~/Library/Caches/`
-//!   because argv[0] tagging can't survive LS's argv rewrite; PID is
-//!   resolved after `open` returns by polling `ps` for the bundle's
-//!   main executable.
+//!
+//!   **Identity on this path is a singleton switch, not a scoping
+//!   key.** When the caller passes `identity`, every running instance
+//!   of the bundle's main executable gets SIGKILLed before `open`
+//!   fires, regardless of which identity (if any) launched them and
+//!   regardless of whether the prior launch went through this
+//!   supervisor at all. The `identity` string is only consulted to
+//!   decide whether to preempt; it is not used to filter the kill
+//!   set. This means two concurrent LS launches of the same `.app`
+//!   with different identities cannot coexist — the second call
+//!   will terminate the first.
+//!
+//!   The reason identity can't act as a scope here is that LS
+//!   rewrites argv at spawn time (so argv[0] tagging is gone) and
+//!   macOS `ps -E` does not surface the environment to non-root
+//!   callers (so env-var tagging can't be read back either). `ps
+//!   comm=` is the only reliable "is this a running instance of my
+//!   bundle" signal that survives an external launch, and it carries
+//!   no per-launch metadata. Callers that need multiple concurrent
+//!   instances of the same bundle with separate identities should
+//!   pass the inner executable path (e.g.
+//!   `/Applications/Foo.app/Contents/MacOS/Foo`) to fall onto the
+//!   direct-exec route, which does support per-identity argv[0]
+//!   tagging — at the cost of losing LS integration.
+//!
+//!   PID is resolved after `open` returns by polling `ps` for a new
+//!   process whose executable matches the bundle's main exec.
 //! * **Direct exec** (everything else): `tokio::process::Command` fires
 //!   `posix_spawn` on the given path, and we place the spawned root in
 //!   its own process group via `pre_exec(setpgid(0, 0))` so helpers
@@ -106,7 +129,7 @@ async fn spawn_direct(
 }
 
 async fn spawn_bundle(
-    app: &App,
+    _app: &App,
     command: &str,
     opts: ContainOptions,
 ) -> Result<Box<dyn Container>> {
@@ -118,27 +141,25 @@ async fn spawn_bundle(
         })?;
     let info = bundle::read_info(&bundle_path).await?;
 
-    // Identity preemption on the LS route is PID-file based because
-    // argv[0] tagging doesn't work under LS (argv is rewritten) and
-    // `ps -E` on macOS doesn't surface env to non-root despite the
-    // man page. The file lives under `~/Library/Caches` and survives
-    // supervisor crashes.
-    let combined_identity = if let Some(ident) = &opts.identity {
+    // Identity on this path is a singleton switch, not a scoping key:
+    // when `identity` is Some we SIGKILL every running instance of
+    // the bundle's main executable before `open` fires, ignoring the
+    // actual identity value. Two concurrent LS launches of the same
+    // `.app` with distinct identities cannot coexist — the second
+    // call will terminate the first. See the module-level docs for
+    // the full rationale (argv and env-based per-launch tagging both
+    // fall off under LS, leaving `ps comm=` as the only "is this my
+    // bundle running" signal that survives an external launch).
+    //
+    // `baseline` must be a fresh snapshot taken immediately before
+    // `open` fires, after any best-effort preemption has settled. That
+    // way PID resolution treats any survivor or concurrent external
+    // launch as "already present" and only attaches to a PID that
+    // actually appeared after this spawn request.
+    if let Some(ident) = opts.identity.as_deref() {
         identity::validate(ident)?;
-        let combined = identity::combine(app.prefix(), ident);
-        bundle::kill_existing_by_pidfile(&combined, &info.executable_path)
-            .await
-            .map_err(|e| Error::Preempt {
-                identity: combined.clone(),
-                source: Box::new(e),
-            })?;
-        Some(combined)
-    } else {
-        None
-    };
-
-    // Snapshot before spawn so the post-launch poll knows which PIDs
-    // already belonged to other instances of this bundle.
+        bundle::kill_existing_bundle_instances(&info.executable_path).await;
+    }
     let baseline = bundle::snapshot_bundle_pids(&info.executable_path).await;
 
     let mut cmd = Command::new("open");
@@ -164,14 +185,6 @@ async fn spawn_bundle(
     let deadline = Instant::now() + LS_PID_RESOLVE_TIMEOUT;
     let pid = bundle::resolve_new_pid(&info.executable_path, &baseline, deadline, &info.bundle_id)
         .await?;
-
-    // Commit the handoff: future spawns with this identity will find
-    // our PID in the file and preempt us. Errors are swallowed because
-    // preemption is best-effort — a failed write just means the next
-    // spawn can't kill this one via the file mechanism.
-    if let Some(combined) = &combined_identity {
-        let _ = bundle::write_pidfile(combined, pid).await;
-    }
 
     let mut probe = probe::capture_probe_with_bundle(pid, Some(info.bundle_id.clone())).await?;
     // Probe executable_path from `ps comm=` truncates on macOS, so

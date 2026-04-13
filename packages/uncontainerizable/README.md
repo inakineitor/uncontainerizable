@@ -18,9 +18,10 @@ If the program can run in a real sandbox — namespaces, seccomp, landlock
   stages.
 - **Tree-aware teardown.** Helper processes get reaped alongside the root;
   the container is "empty" only when no member remains.
-- **Identity-based singleton.** At most one container per identity is
-  alive at a time; spawning preempts any predecessor using kernel
-  primitives on Linux and Windows.
+- **Identity-based preemption.** Spawning with an `identity` preempts
+  earlier matching instances. Linux and Windows are identity-scoped;
+  macOS `.app` launches use bundle-scoped preemption on the Launch
+  Services path.
 - **Adapter hooks.** Per-app lifecycle callbacks suppress "didn't shut
   down correctly" dialogs after force-kill.
 - **Infallible destroy.** `destroy()` aggregates errors into the result
@@ -32,12 +33,23 @@ If the program can run in a real sandbox — namespaces, seccomp, landlock
 | Platform          | Preemption primitive | Quit ladder                                |
 | ----------------- | -------------------- | ------------------------------------------ |
 | Linux (x64/arm64) | cgroup v2            | `SIGTERM` → `SIGKILL` (race-free via freeze) |
-| macOS (x64/arm64) | `argv[0]` tag scan   | `aevt/quit` → `SIGTERM` → `SIGKILL`          |
+| macOS (x64/arm64) | `argv[0]` tag scan / bundle-exec `ps` scan | `aevt/quit` → `SIGTERM` → `SIGKILL` |
 | Windows (x64/arm64) | named Job Object   | `WM_CLOSE` → `TerminateJobObject`            |
 
 Linux musl is shipped via `cargo-zigbuild`. Identity strings are
 namespaced by an app-level prefix (conventionally reverse-DNS) so
 libraries using `uncontainerizable` cannot collide.
+
+On macOS, direct-exec launches use `argv[0]` tag scanning. Launch
+Services `.app` launches instead match by bundle executable path via
+`ps comm=`, so supplying `identity` there kills any running instance of
+that bundle before relaunch, regardless of which identity started it.
+Launch Services therefore does not support keeping two instances of the
+same `.app` alive concurrently through this route. If you need that for
+an app bundle, first make sure the app itself supports concurrent
+instances, then pass the inner executable path
+(`Foo.app/Contents/MacOS/Foo`) so the launch goes through direct-exec
+instead of Launch Services.
 
 ## Installation
 
@@ -80,8 +92,13 @@ console.log(`exited at ${result.quit.exitedAtStage}`);
 ```
 
 A second call to `app.contain(..., { identity: "browser-main" })` will
-kill the running instance before launching the new one. Omit `identity`
-to skip preemption entirely.
+kill the running instance before launching the new one. On macOS `.app`
+launches, the same option acts as a bundle-scoped clean-slate switch and
+clears any running instance of that bundle. Omit `identity` to skip
+preemption entirely. If you need concurrent instances of a bundled app on
+macOS, pass the executable inside the bundle rather than the `.app`
+directory, and only do that if the app itself supports multiple
+instances.
 
 ## API
 
@@ -103,9 +120,9 @@ Spawns a contained process. Options:
 | `args`            | `string[]`       | Command-line arguments.                                          |
 | `env`             | `Record<…>`      | Environment overrides.                                           |
 | `cwd`             | `string`         | Working directory.                                               |
-| `identity`        | `string`         | Enables singleton enforcement; prior instance is killed first.   |
+| `identity`        | `string`         | Enables preemption; macOS `.app` launches match by bundle, other routes by identity. Use the inner executable path, not the `.app` path, if the app supports concurrent instances and you need more than one at once. |
 | `adapters`        | `Adapter[]`      | Per-app lifecycle hooks.                                         |
-| `darwinTagArgv0`  | `boolean`        | macOS only; set `false` if the managed program misreads argv[0]. |
+| `darwinTagArgv0`  | `boolean`        | macOS direct-exec only; set `false` if the managed program misreads argv[0] (ignored for `.app` bundle launches). |
 
 ### `container.quit(options?) → Promise<QuitResult>`
 

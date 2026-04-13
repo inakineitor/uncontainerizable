@@ -272,7 +272,7 @@ async fn bundle_identity_preemption_kills_externally_launched_instance() {
     // uncontainerizable is left running when a bundle launch with an
     // identity happens. The fix is bundle-scoped preemption, so any
     // process whose executable matches the bundle's main-exec path is
-    // SIGKILLed before `open -n` fires — not just instances we
+    // SIGKILLed before `open -n` fires, not just instances we
     // previously spawned.
     let Some(bundle) = fixture_bundle("preempt-external").await else {
         return;
@@ -408,7 +408,7 @@ async fn bundle_args_are_passed_via_dash_dash_args() {
 #[tokio::test]
 async fn non_bundle_path_uses_direct_exec() {
     // `sleep` doesn't end in .app, so this must take the direct-exec
-    // path. The test doesn't verify much beyond "it still works" — the
+    // path. The test doesn't verify much beyond "it still works"; the
     // regression risk is that `is_app_bundle` misclassifies something.
     let app = App::new("test.ls.direct_unchanged").unwrap();
     let opts = ContainOptions {

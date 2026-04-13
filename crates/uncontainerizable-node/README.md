@@ -1,6 +1,6 @@
 # @uncontainerizable/native
 
-Native bindings for [`uncontainerizable`](https://www.npmjs.com/package/uncontainerizable) — a supervisor library for
+Native bindings for [`uncontainerizable`](https://www.npmjs.com/package/uncontainerizable): a supervisor library for
 programs that can't be put in real containers.
 
 > [!NOTE]

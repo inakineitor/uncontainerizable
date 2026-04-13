@@ -6,7 +6,7 @@
 //! against the generated state forever. Bumping the native crate's
 //! `version` in a Changesets Version Packages PR would then need a
 //! matching bump of eight sibling packages that don't yet exist on
-//! npm — a lockfile pnpm can't resolve. Source must stay free of
+//! npm, a lockfile pnpm can't resolve. Source must stay free of
 //! self-referential entries so that pitfall can't recur.
 //!
 //! The `package.json` lives alongside this crate, so the invariant

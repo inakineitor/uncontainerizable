@@ -19,7 +19,7 @@
 //! switch**: when the caller passes an identity on a bundle launch we
 //! scan `ps` for every process whose executable is
 //! `<bundle>/Contents/MacOS/<CFBundleExecutable>` and SIGKILL each
-//! tree — regardless of which identity (if any) started them. Two
+//! tree, regardless of which identity (if any) started them. Two
 //! concurrent LS launches of the same `.app` with different identities
 //! cannot coexist; the second will terminate the first. Callers that
 //! need multiple concurrent instances of a bundle should pass the
@@ -203,7 +203,7 @@ async fn scan_matching_pids(exec_path: &Path) -> std::io::Result<HashSet<u32>> {
 /// Poll `ps` for a PID matching `exec_path` that wasn't in `baseline`.
 /// Returns `PidResolveTimeout` once `deadline` passes.
 ///
-/// 100ms poll interval — fast enough that LS registration delay (~50-
+/// 100ms poll interval: fast enough that LS registration delay (~50-
 /// 500ms in practice) resolves within two or three polls on warm
 /// launches, slow enough to avoid flooding `ps`.
 pub async fn resolve_new_pid(

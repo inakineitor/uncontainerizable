@@ -13,6 +13,42 @@ function readText(relativePath: string): Promise<string> {
 }
 
 describe("workspace config regressions", () => {
+  test("native package does not commit its own optional dependencies", async () => {
+    // `napi prepublish` regenerates the native package's
+    // optionalDependencies from `napi.targets` immediately before
+    // publish. Keeping the field in source would drift against that
+    // generated state forever: bumping the package version in a
+    // Changesets PR would need a matching bump of eight pinned
+    // sibling packages that don't yet exist on npm, producing a
+    // lockfile pnpm can't resolve. Source should stay free of
+    // self-referential @uncontainerizable/native-* pins so that
+    // pitfall can't come back.
+    const nativePackage = (await readJson(
+      "../../../crates/uncontainerizable-node/package.json"
+    )) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+      optionalDependencies?: Record<string, string>;
+      peerDependencies?: Record<string, string>;
+    };
+
+    const depFields = [
+      "dependencies",
+      "devDependencies",
+      "optionalDependencies",
+      "peerDependencies",
+    ] as const;
+    for (const field of depFields) {
+      const entries = nativePackage[field] ?? {};
+      for (const name of Object.keys(entries)) {
+        expect(
+          name.startsWith("@uncontainerizable/native-"),
+          `${field} must not list @uncontainerizable/native-* package ${name}; napi prepublish generates optionalDependencies at publish time`
+        ).toBe(false);
+      }
+    }
+  });
+
   test("release workflow matrix matches napi.targets", async () => {
     // `napi.targets` is the single source of truth for per-platform
     // binaries. `napi prepublish` reads it at publish time to generate

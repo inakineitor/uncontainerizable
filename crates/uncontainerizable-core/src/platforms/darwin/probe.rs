@@ -13,9 +13,25 @@ use crate::probe::{Probe, SupportedPlatform};
 use super::lsappinfo;
 
 pub async fn capture_probe(pid: u32) -> Result<Probe, ProbeError> {
+    capture_probe_with_bundle(pid, None).await
+}
+
+/// Like `capture_probe`, but skips the `lsappinfo` shell-out when the
+/// caller has already resolved the bundle ID through a more reliable
+/// source (e.g. parsing `Info.plist` on the Launch Services spawn path).
+/// The LS route hits this race-free because the plist read happens
+/// before we even ask LS to launch the app.
+pub async fn capture_probe_with_bundle(
+    pid: u32,
+    bundle_id: Option<String>,
+) -> Result<Probe, ProbeError> {
     let mut probe = Probe::new(pid, SupportedPlatform::Darwin);
     probe.executable_path = exe_path_from_ps(pid).await.ok();
-    probe.bundle_id = lsappinfo::bundle_id(pid).await;
+    probe.bundle_id = if bundle_id.is_some() {
+        bundle_id
+    } else {
+        lsappinfo::bundle_id(pid).await
+    };
     Ok(probe)
 }
 

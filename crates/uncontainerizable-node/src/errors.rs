@@ -22,5 +22,7 @@ fn classify(err: &CoreError) -> (Status, &'static str) {
         CoreError::AlreadyDestroyed => (Status::InvalidArg, "ALREADY_DESTROYED"),
         CoreError::Platform(_) => (Status::GenericFailure, "PLATFORM_ERROR"),
         CoreError::Stage(_) => (Status::GenericFailure, "STAGE_ERROR"),
+        #[cfg(target_os = "macos")]
+        CoreError::Bundle(_) => (Status::InvalidArg, "BUNDLE_ERROR"),
     }
 }

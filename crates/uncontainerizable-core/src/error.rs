@@ -42,6 +42,10 @@ pub enum Error {
 
     #[error(transparent)]
     Stage(#[from] StageError),
+
+    #[cfg(target_os = "macos")]
+    #[error(transparent)]
+    Bundle(#[from] BundleError),
 }
 
 #[derive(Debug, Error)]
@@ -158,6 +162,48 @@ pub enum JobObjectError {
         #[source]
         source: windows::core::Error,
     },
+}
+
+/// Errors specific to the macOS Launch Services launch path.
+///
+/// Direct-exec launches surface failures through `Error::Spawn` or
+/// `Error::Probe`; the bundle route needs shaped errors for the things
+/// that only exist on this path: Info.plist parsing, `open` exit code,
+/// and the post-launch PID-resolution timeout.
+#[cfg(target_os = "macos")]
+#[derive(Debug, Error)]
+pub enum BundleError {
+    #[error(".app path is not a directory: {path:?}")]
+    NotADirectory { path: std::path::PathBuf },
+
+    #[error("missing Info.plist at {path:?}")]
+    PlistMissing { path: std::path::PathBuf },
+
+    #[error("failed to read {field} from Info.plist at {plist:?}")]
+    PlistField {
+        field: &'static str,
+        plist: std::path::PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("open exited with status {exit_code:?} for bundle {bundle_path:?}")]
+    OpenFailed {
+        bundle_path: std::path::PathBuf,
+        exit_code: Option<i32>,
+    },
+
+    #[error(
+        "could not resolve PID for bundle {bundle_id} ({executable_path:?}) after {waited_ms}ms"
+    )]
+    PidResolveTimeout {
+        bundle_id: String,
+        executable_path: std::path::PathBuf,
+        waited_ms: u64,
+    },
+
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
 }
 
 #[derive(Debug, Error)]

@@ -21,6 +21,16 @@ async fn main() {
     use tokio::signal::unix::{SignalKind, signal};
 
     let ignore_sigterm = env::args().any(|a| a == "--ignore-sigterm");
+
+    // When spawned under Launch Services via `open`, stdout is detached
+    // from the caller, so tests that need to verify argv/env contents
+    // opt into a filesystem-backed dump. The writer is best-effort and
+    // silently ignores I/O errors so it doesn't break the signal tests.
+    if let Ok(dump_path) = env::var("UNCONTAINERIZABLE_ARGV_DUMP") {
+        let payload = env::args().collect::<Vec<_>>().join("\n");
+        let _ = std::fs::write(&dump_path, payload);
+    }
+
     println!("test-child pid={} ready", std::process::id());
 
     let mut sigint = signal(SignalKind::interrupt()).expect("install SIGINT");

@@ -34,7 +34,10 @@ impl NodeApp {
     /// Spawn a contained process. If `opts.identity` is set, a prior
     /// matching instance is killed first. On macOS Launch Services `.app`
     /// launches, matching is bundle-scoped rather than `prefix + identity`
-    /// scoped.
+    /// scoped, so this route cannot keep two instances of the same app
+    /// alive concurrently. If the app itself supports multiple concurrent
+    /// instances, pass the inner executable path
+    /// (`Foo.app/Contents/MacOS/Foo`) to use the direct-exec route.
     #[napi]
     pub async fn contain(
         &self,

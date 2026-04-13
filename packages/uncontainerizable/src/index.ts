@@ -37,8 +37,12 @@ export class App {
    * Spawn a contained process. If `options.identity` is set, a prior
    * matching instance is killed before launch. On macOS Launch Services
    * `.app` launches, matching is bundle-scoped rather than
-   * `(prefix, identity)`-scoped. If `options.adapters` is non-empty the
-   * Rust orchestrator drives their lifecycle hooks around the quit ladder.
+   * `(prefix, identity)`-scoped, so this route cannot keep two instances
+   * of the same app alive concurrently. If the app itself supports
+   * multiple concurrent instances, pass the inner executable path
+   * (`Foo.app/Contents/MacOS/Foo`) to use the direct-exec route instead.
+   * If `options.adapters` is non-empty the Rust orchestrator drives their
+   * lifecycle hooks around the quit ladder.
    */
   contain(command: string, options: ContainOptions = {}): Promise<Container> {
     const { adapters, ...nativeOpts } = options;

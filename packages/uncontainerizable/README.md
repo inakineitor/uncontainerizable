@@ -44,6 +44,12 @@ On macOS, direct-exec launches use `argv[0]` tag scanning. Launch
 Services `.app` launches instead match by bundle executable path via
 `ps comm=`, so supplying `identity` there kills any running instance of
 that bundle before relaunch, regardless of which identity started it.
+Launch Services therefore does not support keeping two instances of the
+same `.app` alive concurrently through this route. If you need that for
+an app bundle, first make sure the app itself supports concurrent
+instances, then pass the inner executable path
+(`Foo.app/Contents/MacOS/Foo`) so the launch goes through direct-exec
+instead of Launch Services.
 
 ## Installation
 
@@ -89,7 +95,10 @@ A second call to `app.contain(..., { identity: "browser-main" })` will
 kill the running instance before launching the new one. On macOS `.app`
 launches, the same option acts as a bundle-scoped clean-slate switch and
 clears any running instance of that bundle. Omit `identity` to skip
-preemption entirely.
+preemption entirely. If you need concurrent instances of a bundled app on
+macOS, pass the executable inside the bundle rather than the `.app`
+directory, and only do that if the app itself supports multiple
+instances.
 
 ## API
 
@@ -111,7 +120,7 @@ Spawns a contained process. Options:
 | `args`            | `string[]`       | Command-line arguments.                                          |
 | `env`             | `Record<…>`      | Environment overrides.                                           |
 | `cwd`             | `string`         | Working directory.                                               |
-| `identity`        | `string`         | Enables preemption; macOS `.app` launches match by bundle, other routes by identity. |
+| `identity`        | `string`         | Enables preemption; macOS `.app` launches match by bundle, other routes by identity. Use the inner executable path, not the `.app` path, if the app supports concurrent instances and you need more than one at once. |
 | `adapters`        | `Adapter[]`      | Per-app lifecycle hooks.                                         |
 | `darwinTagArgv0`  | `boolean`        | macOS direct-exec only; set `false` if the managed program misreads argv[0] (ignored for `.app` bundle launches). |
 

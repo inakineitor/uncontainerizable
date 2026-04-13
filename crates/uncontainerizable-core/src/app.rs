@@ -30,7 +30,10 @@ impl App {
     /// Spawn a contained process. If `opts.identity` is set, a prior
     /// matching instance is killed before launch. On macOS Launch Services
     /// `.app` launches, matching is bundle-scoped rather than
-    /// `(prefix, identity)`-scoped.
+    /// `(prefix, identity)`-scoped, so this route cannot keep two
+    /// instances of the same app alive concurrently. If the app itself
+    /// supports multiple concurrent instances, pass the inner executable
+    /// path (`Foo.app/Contents/MacOS/Foo`) to use the direct-exec route.
     pub async fn contain(&self, command: &str, opts: ContainOptions) -> Result<Box<dyn Container>> {
         crate::platforms::spawn(self, command, opts).await
     }

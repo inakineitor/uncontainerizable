@@ -6,12 +6,31 @@
 //!   `command` is a `.app` directory. We shell out to
 //!   `open -n -F -a <bundle>` so the app is properly registered with
 //!   `launchservicesd` (Dock, Apple Events, fresh saved state).
-//!   Identity preemption on this path is bundle-scoped: when the
-//!   caller passes `identity`, every running instance of the bundle's
-//!   main executable (as reported by `ps comm=`) gets SIGKILLed,
-//!   regardless of who launched it. This catches externally-launched
-//!   instances a PID-file scheme would miss, at the cost of not
-//!   allowing two distinct identities of the same bundle to coexist.
+//!
+//!   **Identity on this path is a singleton switch, not a scoping
+//!   key.** When the caller passes `identity`, every running instance
+//!   of the bundle's main executable gets SIGKILLed before `open`
+//!   fires, regardless of which identity (if any) launched them and
+//!   regardless of whether the prior launch went through this
+//!   supervisor at all. The `identity` string is only consulted to
+//!   decide whether to preempt; it is not used to filter the kill
+//!   set. This means two concurrent LS launches of the same `.app`
+//!   with different identities cannot coexist — the second call
+//!   will terminate the first.
+//!
+//!   The reason identity can't act as a scope here is that LS
+//!   rewrites argv at spawn time (so argv[0] tagging is gone) and
+//!   macOS `ps -E` does not surface the environment to non-root
+//!   callers (so env-var tagging can't be read back either). `ps
+//!   comm=` is the only reliable "is this a running instance of my
+//!   bundle" signal that survives an external launch, and it carries
+//!   no per-launch metadata. Callers that need multiple concurrent
+//!   instances of the same bundle with separate identities should
+//!   pass the inner executable path (e.g.
+//!   `/Applications/Foo.app/Contents/MacOS/Foo`) to fall onto the
+//!   direct-exec route, which does support per-identity argv[0]
+//!   tagging — at the cost of losing LS integration.
+//!
 //!   PID is resolved after `open` returns by polling `ps` for a new
 //!   process whose executable matches the bundle's main exec.
 //! * **Direct exec** (everything else): `tokio::process::Command` fires
@@ -122,14 +141,15 @@ async fn spawn_bundle(
         })?;
     let info = bundle::read_info(&bundle_path).await?;
 
-    // Identity preemption on the LS route is bundle-scoped: the caller
-    // opted in to "clean slate", so every running instance of the
-    // bundle's main executable gets SIGKILLed, not just ones this
-    // supervisor launched previously. argv[0] tagging doesn't work
-    // under LS (argv is rewritten), and macOS `ps -E` doesn't surface
-    // the environment to non-root callers despite the man page — so
-    // the most reliable signal for "is this a running instance of
-    // the bundle I was asked to launch" is the `ps comm=` match.
+    // Identity on this path is a singleton switch, not a scoping key:
+    // when `identity` is Some we SIGKILL every running instance of
+    // the bundle's main executable before `open` fires, ignoring the
+    // actual identity value. Two concurrent LS launches of the same
+    // `.app` with distinct identities cannot coexist — the second
+    // call will terminate the first. See the module-level docs for
+    // the full rationale (argv and env-based per-launch tagging both
+    // fall off under LS, leaving `ps comm=` as the only "is this my
+    // bundle running" signal that survives an external launch).
     //
     // `baseline` captures the PIDs we saw before `open` fires so the
     // post-launch PID poll knows which entries belong to instances

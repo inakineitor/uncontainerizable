@@ -8,15 +8,23 @@
 //! saved state, the `-n` flag forces a new instance past any stale PSN
 //! LS kept from a killed predecessor).
 //!
-//! argv[0] tagging doesn't work on this path because LS rewrites argv.
-//! Identity preemption is bundle-scoped: when the caller passes an
-//! identity on a bundle launch we scan `ps` for every process whose
-//! executable is the bundle's main-exec path (`<bundle>/Contents/MacOS/
-//! <CFBundleExecutable>`) and SIGKILL each tree, then let `open -n`
-//! stand up a fresh instance. That way externally-launched instances
-//! (user double-clicked Photoshop, another tool spawned it) also get
-//! cleared — the previous PID-file-scoped design only killed instances
-//! we had launched ourselves.
+//! argv[0] tagging doesn't work on this path because LS rewrites argv,
+//! and macOS `ps -E` hides the environment from non-root callers, so
+//! neither of the per-launch tagging schemes we use on other platforms
+//! can round-trip through LS. The only signal for "is a matching
+//! instance running right now" that survives an external launch is
+//! `ps comm=` against the bundle's main-exec path.
+//!
+//! This makes identity preemption on the LS route a **singleton
+//! switch**: when the caller passes an identity on a bundle launch we
+//! scan `ps` for every process whose executable is
+//! `<bundle>/Contents/MacOS/<CFBundleExecutable>` and SIGKILL each
+//! tree — regardless of which identity (if any) started them. Two
+//! concurrent LS launches of the same `.app` with different identities
+//! cannot coexist; the second will terminate the first. Callers that
+//! need multiple concurrent instances of a bundle should pass the
+//! inner executable path to route through direct-exec, which does
+//! keep per-identity tagging via argv[0].
 //!
 //! An earlier design used `UNCONTAINERIZABLE_IDENTITY=<combined>` env
 //! variable tagging parsed via `ps -E`. On macOS the `-E` flag does

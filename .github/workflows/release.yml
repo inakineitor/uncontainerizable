@@ -118,6 +118,21 @@ jobs:
         run: pnpm --filter @uncontainerizable/native run artifacts
         env:
           NAPI_ARTIFACTS_DIR: artifacts
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      - name: Build native package loader
+        # The matrix upload artifacts are `.node` files only; they get
+        # staged into `npm/<target>/` by `napi artifacts`. The main
+        # `@uncontainerizable/native` package still needs its
+        # `dist/index.js` loader and `dist/index.d.ts` types, which
+        # only `napi build` produces. Running it on the release runner
+        # also drops a host-triple `.node` into `dist/` — that gets
+        # bundled into the main tarball as a fallback for consumers
+        # whose optionalDependency pick didn't install (same layout
+        # the initial 0.0.3 publish shipped). The per-platform sibling
+        # packages remain the primary binary source.
+        run: pnpm --filter @uncontainerizable/native run build
       - name: Build TS wrapper
         run: pnpm --filter uncontainerizable run build
       - name: Create Release Pull Request or Publish

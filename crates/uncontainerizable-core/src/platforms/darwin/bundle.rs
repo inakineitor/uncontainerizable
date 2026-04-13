@@ -140,18 +140,16 @@ async fn read_plist_field(plist: &Path, field: &'static str) -> Result<String, B
 }
 
 /// Kill every running instance of the bundle's main executable, not
-/// just ones this supervisor launched. Returns the set of PIDs we
-/// signalled, so callers can skip them when resolving the new PID and
-/// wait for reap before the post-launch poll.
+/// just ones this supervisor launched.
 ///
 /// Best-effort: `ps` or `kill_tree` failures are swallowed because
 /// preemption is not allowed to block a fresh spawn. A surviving
 /// predecessor at worst means two instances coexist for a moment,
 /// which `open -n` handles via its forced-new-instance semantics.
-pub async fn kill_existing_bundle_instances(executable_path: &Path) -> HashSet<u32> {
+pub async fn kill_existing_bundle_instances(executable_path: &Path) {
     let pids = snapshot_bundle_pids(executable_path).await;
     if pids.is_empty() {
-        return pids;
+        return;
     }
     for &pid in &pids {
         let _ = kill_tree_with_config(
@@ -168,7 +166,6 @@ pub async fn kill_existing_bundle_instances(executable_path: &Path) -> HashSet<u
     // in the process table mid-reap) and either mistake it for the new
     // instance or burn poll iterations waiting for it to disappear.
     sleep(REAP_SETTLE).await;
-    pids
 }
 
 /// Collect the current set of PIDs whose `ps comm=` matches

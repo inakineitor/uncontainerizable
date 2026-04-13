@@ -129,7 +129,7 @@ async fn spawn_direct(
 }
 
 async fn spawn_bundle(
-    app: &App,
+    _app: &App,
     command: &str,
     opts: ContainOptions,
 ) -> Result<Box<dyn Container>> {
@@ -151,21 +151,16 @@ async fn spawn_bundle(
     // fall off under LS, leaving `ps comm=` as the only "is this my
     // bundle running" signal that survives an external launch).
     //
-    // `baseline` captures the PIDs we saw before `open` fires so the
-    // post-launch PID poll knows which entries belong to instances
-    // that predated us (either survivors of best-effort preemption or
-    // unrelated instances when `identity` was not provided).
-    let baseline = if opts.identity.is_some() {
-        let ident = opts.identity.as_deref().unwrap();
+    // `baseline` must be a fresh snapshot taken immediately before
+    // `open` fires, after any best-effort preemption has settled. That
+    // way PID resolution treats any survivor or concurrent external
+    // launch as "already present" and only attaches to a PID that
+    // actually appeared after this spawn request.
+    if let Some(ident) = opts.identity.as_deref() {
         identity::validate(ident)?;
-        // `combined` is kept around for the eventual error surface; the
-        // preemption itself doesn't consult it because the primitive is
-        // bundle-scoped, not identity-scoped.
-        let _combined = identity::combine(app.prefix(), ident);
-        bundle::kill_existing_bundle_instances(&info.executable_path).await
-    } else {
-        bundle::snapshot_bundle_pids(&info.executable_path).await
-    };
+        bundle::kill_existing_bundle_instances(&info.executable_path).await;
+    }
+    let baseline = bundle::snapshot_bundle_pids(&info.executable_path).await;
 
     let mut cmd = Command::new("open");
     cmd.args(["-n", "-F", "-a", &bundle_path.to_string_lossy()]);

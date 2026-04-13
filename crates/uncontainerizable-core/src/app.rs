@@ -27,9 +27,10 @@ impl App {
         &self.prefix
     }
 
-    /// Spawn a contained process. If `opts.identity` is set, any previous
-    /// instance with the same (prefix, identity) pair is killed before this
-    /// one launches.
+    /// Spawn a contained process. If `opts.identity` is set, a prior
+    /// matching instance is killed before launch. On macOS Launch Services
+    /// `.app` launches, matching is bundle-scoped rather than
+    /// `(prefix, identity)`-scoped.
     pub async fn contain(&self, command: &str, opts: ContainOptions) -> Result<Box<dyn Container>> {
         crate::platforms::spawn(self, command, opts).await
     }
@@ -41,11 +42,14 @@ pub struct ContainOptions {
     pub env: Vec<(String, String)>,
     pub cwd: Option<PathBuf>,
     pub adapters: Vec<Arc<dyn Adapter>>,
-    /// Enable identity-based singleton enforcement. `None` = no preemption.
+    /// Enable singleton-style preemption. `None` = no preemption.
+    /// On macOS Launch Services `.app` launches, this becomes
+    /// bundle-scoped rather than identity-scoped.
     pub identity: Option<String>,
-    /// macOS only: if `false`, skip rewriting argv[0] with the identity tag
-    /// even when `identity` is set. Loses predecessor killing on macOS for
-    /// programs that inspect argv[0] and misbehave.
+    /// macOS direct-exec only: if `false`, skip rewriting argv[0] with the
+    /// identity tag. This disables identity-scoped predecessor killing on
+    /// the direct-exec route for programs that inspect argv[0] and
+    /// misbehave. Ignored for Launch Services `.app` launches.
     pub darwin_tag_argv0: bool,
 }
 

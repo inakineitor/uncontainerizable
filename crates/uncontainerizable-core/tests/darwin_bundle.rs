@@ -225,12 +225,12 @@ async fn bundle_launch_destroys_cleanly() {
 }
 
 #[tokio::test]
-async fn bundle_identity_preemption_via_pidfile() {
-    let Some(bundle) = fixture_bundle("pid-preempt").await else {
+async fn bundle_identity_preemption_kills_previous_supervised_instance() {
+    let Some(bundle) = fixture_bundle("preempt-supervised").await else {
         return;
     };
 
-    let app = App::new("test.ls.pid_preempt").unwrap();
+    let app = App::new("test.ls.preempt_supervised").unwrap();
 
     let first = app
         .contain(
@@ -260,10 +260,92 @@ async fn bundle_identity_preemption_via_pidfile() {
 
     assert!(
         !pid_alive(first_pid),
-        "predecessor PID {first_pid} should be dead after pidfile preemption"
+        "predecessor PID {first_pid} should be dead after bundle preemption"
     );
 
     let _ = second.destroy(DestroyOptions::default()).await;
+}
+
+#[tokio::test]
+async fn bundle_identity_preemption_kills_externally_launched_instance() {
+    // Mirrors the user-reported bug: Photoshop started outside
+    // uncontainerizable is left running when a bundle launch with an
+    // identity happens. The fix is bundle-scoped preemption, so any
+    // process whose executable matches the bundle's main-exec path is
+    // SIGKILLed before `open -n` fires — not just instances we
+    // previously spawned.
+    let Some(bundle) = fixture_bundle("preempt-external").await else {
+        return;
+    };
+
+    // Start an instance via `open` directly, standing in for any
+    // external launch. `-n` gives us a fresh process. Give it a
+    // moment to register with LS before we scan.
+    let open_status = tokio::process::Command::new("open")
+        .args(["-n", "-F", "-a", bundle.path.to_str().unwrap()])
+        .status()
+        .await
+        .expect("open");
+    assert!(open_status.success(), "open exited {open_status}");
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let external_pids =
+        pids_for_executable(&bundle.path.join("Contents").join("MacOS").join("TestChild")).await;
+    assert!(
+        !external_pids.is_empty(),
+        "expected at least one externally-launched TestChild PID"
+    );
+
+    let app = App::new("test.ls.preempt_external").unwrap();
+    let mut container = app
+        .contain(
+            bundle.path.to_str().unwrap(),
+            ContainOptions {
+                identity: Some("run".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("supervised spawn");
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    for pid in &external_pids {
+        assert!(
+            !pid_alive(*pid),
+            "externally-launched PID {pid} should be dead after bundle preemption"
+        );
+    }
+
+    let _ = container.destroy(DestroyOptions::default()).await;
+}
+
+async fn pids_for_executable(executable: &std::path::Path) -> Vec<u32> {
+    let Ok(output) = tokio::process::Command::new("ps")
+        .args(["-ax", "-o", "pid=,comm="])
+        .output()
+        .await
+    else {
+        return Vec::new();
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+    let target = executable.to_string_lossy();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut pids = Vec::new();
+    for line in stdout.lines() {
+        let Some((pid_str, comm)) = line.trim_start().split_once(char::is_whitespace) else {
+            continue;
+        };
+        if comm.trim() != target {
+            continue;
+        }
+        if let Ok(pid) = pid_str.trim().parse::<u32>() {
+            pids.push(pid);
+        }
+    }
+    pids
 }
 
 #[tokio::test]

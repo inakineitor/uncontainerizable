@@ -10,8 +10,8 @@
     "dev": "turbo run dev",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
-    "lint": "pnpm dlx ultracite check",
-    "lint:fix": "pnpm dlx ultracite fix",
+    "lint": "pnpm exec ultracite check",
+    "lint:fix": "pnpm exec ultracite fix",
     "lint:rust": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings",
     "lint:package": "turbo run lint:package",
     "clean": "turbo run clean && rm -rf node_modules target",
@@ -19,8 +19,8 @@
     "version-packages": "changeset version",
     "release": "changeset publish",
     "prepare": "lefthook install",
-    "check": "ultracite check",
-    "fix": "ultracite fix"
+    "check": "pnpm exec ultracite check",
+    "fix": "pnpm exec ultracite fix"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.11",

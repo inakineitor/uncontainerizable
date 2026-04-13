@@ -3,10 +3,12 @@
 //! Identity preemption is argv[0] tagging (see `argv_tag`): best-effort
 //! because argv[0] is not a kernel primitive like cgroup v2 or a named
 //! Job Object. The three-stage quit ladder (see `stages`) escalates from
-//! Apple Events through SIGTERM and SIGKILL, walking the whole process
-//! tree via `kill_tree`.
+//! Apple Events through SIGTERM and SIGKILL. We place the spawned root in
+//! its own process group so helpers remain targetable even if the root
+//! exits and macOS reparents descendants to launchd.
 
 use async_trait::async_trait;
+use nix::libc;
 use tokio::process::Command;
 
 use crate::app::{App, ContainOptions};
@@ -45,6 +47,9 @@ pub async fn spawn(app: &App, command: &str, opts: ContainOptions) -> Result<Box
     cmd.args(&opts.args).envs(opts.env.iter().cloned());
     if let Some(cwd) = &opts.cwd {
         cmd.current_dir(cwd);
+    }
+    unsafe {
+        cmd.pre_exec(set_process_group_self);
     }
     if let Some(argv0) = &tagged_argv0 {
         cmd.arg0(argv0);
@@ -88,11 +93,11 @@ impl Container for DarwinContainer {
     }
 
     async fn members(&self) -> Vec<u32> {
-        walk_tree(self.core.pid).await
+        members_for_process_group(self.core.pid).await
     }
 
     async fn is_empty(&self) -> std::result::Result<bool, StageError> {
-        Ok(self.members().await.is_empty())
+        Ok(!process_group_alive(self.core.pid))
     }
 
     async fn destroy_resources(&mut self) -> Vec<Error> {
@@ -110,62 +115,63 @@ impl Container for DarwinContainer {
     }
 }
 
-/// Walk the process tree rooted at `root_pid` by parsing `ps -axo pid,ppid`.
-/// Returns every descendant PID (plus the root itself) that is still alive
-/// according to a subsequent `kill(pid, 0)` probe. Returns an empty vector
-/// if the root PID is not alive.
-async fn walk_tree(root_pid: u32) -> Vec<u32> {
-    if !pid_alive(root_pid) {
-        return Vec::new();
+fn set_process_group_self() -> std::io::Result<()> {
+    unsafe {
+        if libc::setpgid(0, 0) == 0 {
+            Ok(())
+        } else {
+            Err(std::io::Error::last_os_error())
+        }
     }
+}
+
+/// Enumerate members of the dedicated process group we create for every
+/// contained root. The group id is the root pid because `pre_exec`
+/// calls `setpgid(0, 0)` in the child before `exec`.
+async fn members_for_process_group(process_group: u32) -> Vec<u32> {
     let Ok(output) = Command::new("ps")
-        .args(["-axo", "pid=,ppid="])
+        .args(["-axo", "pid=,pgid="])
         .output()
         .await
     else {
-        return vec![root_pid];
+        return fallback_members(process_group);
     };
     if !output.status.success() {
-        return vec![root_pid];
+        return fallback_members(process_group);
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut children_of: std::collections::HashMap<u32, Vec<u32>> =
-        std::collections::HashMap::new();
+    let mut members = Vec::new();
     for line in stdout.lines() {
         let mut iter = line.split_whitespace();
-        let (Some(pid_str), Some(ppid_str)) = (iter.next(), iter.next()) else {
+        let (Some(pid_str), Some(pgid_str)) = (iter.next(), iter.next()) else {
             continue;
         };
-        let (Ok(pid), Ok(ppid)) = (pid_str.parse::<u32>(), ppid_str.parse::<u32>()) else {
+        let (Ok(pid), Ok(pgid)) = (pid_str.parse::<u32>(), pgid_str.parse::<u32>()) else {
             continue;
         };
-        children_of.entry(ppid).or_default().push(pid);
-    }
-
-    let mut tree = vec![root_pid];
-    let mut queue = vec![root_pid];
-    while let Some(cur) = queue.pop() {
-        if let Some(children) = children_of.get(&cur) {
-            for &child in children {
-                if !tree.contains(&child) {
-                    tree.push(child);
-                    queue.push(child);
-                }
-            }
+        if pgid == process_group {
+            members.push(pid);
         }
     }
-
-    tree.into_iter().filter(|p| pid_alive(*p)).collect()
+    members
 }
 
-fn pid_alive(pid: u32) -> bool {
+fn fallback_members(process_group: u32) -> Vec<u32> {
+    if process_group_alive(process_group) {
+        vec![process_group]
+    } else {
+        Vec::new()
+    }
+}
+
+fn process_group_alive(process_group: u32) -> bool {
     use nix::errno::Errno;
     use nix::sys::signal::kill;
     use nix::unistd::Pid;
-    // Plan invariant 4: EPERM counts as alive (process exists, we just
-    // can't signal it).
-    match kill(Pid::from_raw(pid as i32), None) {
+    // Plan invariant 4: EPERM counts as alive (the process group exists,
+    // we just can't signal it).
+    match kill(Pid::from_raw(-(process_group as i32)), None) {
         Ok(()) => true,
         Err(Errno::EPERM) => true,
         Err(_) => false,

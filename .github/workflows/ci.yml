@@ -34,7 +34,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Ultracite check
-        run: pnpm dlx ultracite check
+        run: pnpm exec ultracite check
       - name: cargo fmt
         run: cargo fmt --all -- --check
       - name: cargo clippy

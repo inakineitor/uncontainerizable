@@ -15,22 +15,20 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use tokio::fs;
-use tokio::sync::OnceCell;
 
 use uncontainerizable_core::{App, ContainOptions, DestroyOptions};
 
-const FIXTURE_BUNDLE_NAME: &str = "TestChild.app";
-const FIXTURE_BUNDLE_ID: &str = "com.uncontainerizable.tests.TestChild";
 const FIXTURE_EXEC_NAME: &str = "TestChild";
 
-/// Assemble (or reuse) `<target>/tests-fixtures/TestChild.app/` and
-/// return its absolute path. Built lazily once per test-binary run.
-async fn fixture_bundle_path() -> Option<PathBuf> {
-    static CELL: OnceCell<Option<PathBuf>> = OnceCell::const_new();
-    CELL.get_or_init(build_fixture_bundle).await.clone()
+struct FixtureBundle {
+    bundle_id: String,
+    path: PathBuf,
 }
 
-async fn build_fixture_bundle() -> Option<PathBuf> {
+/// Assemble a fresh synthetic `.app` bundle for one test invocation.
+/// Each fixture gets a unique path and bundle ID so parallel tests don't
+/// race through shared Launch Services state.
+async fn fixture_bundle(label: &str) -> Option<FixtureBundle> {
     let test_child = cargo_example_path("test-child");
     if !test_child.exists() {
         eprintln!(
@@ -40,8 +38,12 @@ async fn build_fixture_bundle() -> Option<PathBuf> {
         return None;
     }
 
+    let suffix = fixture_suffix(label);
+    let bundle_id = format!("com.uncontainerizable.tests.testchild.{suffix}");
     let target_dir = target_dir();
-    let bundle_root = target_dir.join("tests-fixtures").join(FIXTURE_BUNDLE_NAME);
+    let bundle_root = target_dir
+        .join("tests-fixtures")
+        .join(format!("TestChild-{suffix}.app"));
     let macos_dir = bundle_root.join("Contents").join("MacOS");
     let plist_path = bundle_root.join("Contents").join("Info.plist");
     let exec_path = macos_dir.join(FIXTURE_EXEC_NAME);
@@ -49,7 +51,7 @@ async fn build_fixture_bundle() -> Option<PathBuf> {
     fs::create_dir_all(&macos_dir)
         .await
         .expect("create bundle MacOS dir");
-    fs::write(&plist_path, info_plist_xml())
+    fs::write(&plist_path, info_plist_xml(&bundle_id))
         .await
         .expect("write Info.plist");
 
@@ -78,10 +80,31 @@ async fn build_fixture_bundle() -> Option<PathBuf> {
     perms.set_mode(0o755);
     std::fs::set_permissions(&exec_path, perms).expect("chmod +x");
 
-    Some(bundle_root)
+    Some(FixtureBundle {
+        bundle_id,
+        path: bundle_root,
+    })
 }
 
-fn info_plist_xml() -> String {
+fn fixture_suffix(label: &str) -> String {
+    let sanitized_label: String = label
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("{sanitized_label}.{}.{}", std::process::id(), nonce)
+}
+
+fn info_plist_xml(bundle_id: &str) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -102,7 +125,7 @@ fn info_plist_xml() -> String {
 </dict>
 </plist>
 "#,
-        bundle_id = FIXTURE_BUNDLE_ID,
+        bundle_id = bundle_id,
         exec_name = FIXTURE_EXEC_NAME
     )
 }
@@ -137,19 +160,19 @@ fn libc_exdev() -> i32 {
 
 #[tokio::test]
 async fn bundle_launch_populates_bundle_id_from_info_plist() {
-    let Some(bundle) = fixture_bundle_path().await else {
+    let Some(bundle) = fixture_bundle("bundle-id-populated").await else {
         return;
     };
 
     let app = App::new("test.ls.bundle_id_populated").unwrap();
     let mut container = app
-        .contain(bundle.to_str().unwrap(), ContainOptions::default())
+        .contain(bundle.path.to_str().unwrap(), ContainOptions::default())
         .await
         .expect("spawn bundle");
 
     assert_eq!(
         container.probe().bundle_id.as_deref(),
-        Some(FIXTURE_BUNDLE_ID),
+        Some(bundle.bundle_id.as_str()),
         "bundle id should come from Info.plist, not lsappinfo race"
     );
 
@@ -158,13 +181,13 @@ async fn bundle_launch_populates_bundle_id_from_info_plist() {
 
 #[tokio::test]
 async fn bundle_launch_resolves_pid_within_timeout() {
-    let Some(bundle) = fixture_bundle_path().await else {
+    let Some(bundle) = fixture_bundle("pid-resolves").await else {
         return;
     };
 
     let app = App::new("test.ls.pid_resolves").unwrap();
     let mut container = app
-        .contain(bundle.to_str().unwrap(), ContainOptions::default())
+        .contain(bundle.path.to_str().unwrap(), ContainOptions::default())
         .await
         .expect("spawn bundle");
 
@@ -175,13 +198,13 @@ async fn bundle_launch_resolves_pid_within_timeout() {
 
 #[tokio::test]
 async fn bundle_launch_destroys_cleanly() {
-    let Some(bundle) = fixture_bundle_path().await else {
+    let Some(bundle) = fixture_bundle("destroy-clean").await else {
         return;
     };
 
     let app = App::new("test.ls.destroy_clean").unwrap();
     let mut container = app
-        .contain(bundle.to_str().unwrap(), ContainOptions::default())
+        .contain(bundle.path.to_str().unwrap(), ContainOptions::default())
         .await
         .expect("spawn bundle");
 
@@ -203,7 +226,7 @@ async fn bundle_launch_destroys_cleanly() {
 
 #[tokio::test]
 async fn bundle_identity_preemption_via_pidfile() {
-    let Some(bundle) = fixture_bundle_path().await else {
+    let Some(bundle) = fixture_bundle("pid-preempt").await else {
         return;
     };
 
@@ -211,7 +234,7 @@ async fn bundle_identity_preemption_via_pidfile() {
 
     let first = app
         .contain(
-            bundle.to_str().unwrap(),
+            bundle.path.to_str().unwrap(),
             ContainOptions {
                 identity: Some("run".into()),
                 ..Default::default()
@@ -223,7 +246,7 @@ async fn bundle_identity_preemption_via_pidfile() {
 
     let mut second = app
         .contain(
-            bundle.to_str().unwrap(),
+            bundle.path.to_str().unwrap(),
             ContainOptions {
                 identity: Some("run".into()),
                 ..Default::default()
@@ -245,7 +268,7 @@ async fn bundle_identity_preemption_via_pidfile() {
 
 #[tokio::test]
 async fn bundle_args_are_passed_via_dash_dash_args() {
-    let Some(bundle) = fixture_bundle_path().await else {
+    let Some(bundle) = fixture_bundle("args-passthrough").await else {
         return;
     };
 
@@ -270,7 +293,7 @@ async fn bundle_args_are_passed_via_dash_dash_args() {
         ..Default::default()
     };
     let mut container = app
-        .contain(bundle.to_str().unwrap(), opts)
+        .contain(bundle.path.to_str().unwrap(), opts)
         .await
         .expect("spawn bundle");
 

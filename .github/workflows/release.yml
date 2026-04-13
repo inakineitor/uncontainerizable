@@ -126,5 +126,11 @@ jobs:
         with:
           publish: pnpm release
           createGithubReleases: true
+          # Commit subjects must pass commitlint (enforced by the
+          # commit-msg lefthook hook, which runs on automated
+          # git commits too). Defaults ("Version Packages" / "chore:
+          # release") fail subject-empty + type-empty.
+          commit: "ci(release): version packages"
+          title: "ci(release): version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

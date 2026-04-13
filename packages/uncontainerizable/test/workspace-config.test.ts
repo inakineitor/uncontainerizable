@@ -12,70 +12,14 @@ function readText(relativePath: string): Promise<string> {
   return readFile(url, "utf8");
 }
 
+// Native-package invariants (napi.targets shape, optionalDependencies
+// not committed, release workflow builds every target) live in the
+// Rust integration test at `crates/uncontainerizable-node/tests/
+// package_json_invariants.rs` because the file they check lives there
+// and the checks run under `cargo test`. Only workspace-wide
+// invariants belong here.
+
 describe("workspace config regressions", () => {
-  test("native package does not commit its own optional dependencies", async () => {
-    // `napi prepublish` regenerates the native package's
-    // optionalDependencies from `napi.targets` immediately before
-    // publish. Keeping the field in source would drift against that
-    // generated state forever: bumping the package version in a
-    // Changesets PR would need a matching bump of eight pinned
-    // sibling packages that don't yet exist on npm, producing a
-    // lockfile pnpm can't resolve. Source should stay free of
-    // self-referential @uncontainerizable/native-* pins so that
-    // pitfall can't come back.
-    const nativePackage = (await readJson(
-      "../../../crates/uncontainerizable-node/package.json"
-    )) as {
-      dependencies?: Record<string, string>;
-      devDependencies?: Record<string, string>;
-      optionalDependencies?: Record<string, string>;
-      peerDependencies?: Record<string, string>;
-    };
-
-    const depFields = [
-      "dependencies",
-      "devDependencies",
-      "optionalDependencies",
-      "peerDependencies",
-    ] as const;
-    for (const field of depFields) {
-      const entries = nativePackage[field] ?? {};
-      for (const name of Object.keys(entries)) {
-        expect(
-          name.startsWith("@uncontainerizable/native-"),
-          `${field} must not list @uncontainerizable/native-* package ${name}; napi prepublish generates optionalDependencies at publish time`
-        ).toBe(false);
-      }
-    }
-  });
-
-  test("release workflow matrix matches napi.targets", async () => {
-    // `napi.targets` is the single source of truth for per-platform
-    // binaries. `napi prepublish` reads it at publish time to generate
-    // optionalDependencies for the main package (source-controlled
-    // optionalDependencies were removed for that reason — they'd drift
-    // forever vs the published state).
-    //
-    // The release workflow has to build a binary for each target in
-    // that list, or the published optionalDependencies point at
-    // packages whose .node files never shipped. That silent mismatch
-    // is the real regression risk; this test catches it by asserting
-    // every entry in napi.targets shows up as a `--target <triple>`
-    // in the release workflow's `build` commands.
-    const nativePackage = (await readJson(
-      "../../../crates/uncontainerizable-node/package.json"
-    )) as {
-      napi: { targets: string[] };
-    };
-    const releaseWorkflow = await readText(
-      "../../../.github/workflows/release.yml"
-    );
-
-    for (const target of nativePackage.napi.targets) {
-      expect(releaseWorkflow).toContain(`--target ${target}`);
-    }
-  });
-
   test("turbo runs the current package build before tests", async () => {
     const turbo = (await readJson("../../../turbo.json")) as {
       tasks: {

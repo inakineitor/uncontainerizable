@@ -16,9 +16,12 @@ use nix::errno::Errno;
 use nix::sys::signal::{Signal, kill};
 use nix::unistd::Pid;
 use tokio::process::Command;
+use tokio::time::timeout;
 
 use crate::container::{Container, Stage};
 use crate::error::StageError;
+
+const APPLE_EVENT_QUIT_TIMEOUT: Duration = Duration::from_secs(3);
 
 pub fn darwin_stages() -> Vec<Arc<dyn Stage>> {
     vec![
@@ -39,7 +42,7 @@ impl Stage for AppleEventQuitStage {
         false
     }
     fn max_wait(&self) -> Duration {
-        Duration::from_secs(3)
+        APPLE_EVENT_QUIT_TIMEOUT
     }
     async fn execute(&self, c: &dyn Container) -> Result<(), StageError> {
         let Some(bundle_id) = c.probe().bundle_id.as_ref() else {
@@ -49,13 +52,19 @@ impl Stage for AppleEventQuitStage {
         };
         let script = format!(r#"tell application id "{bundle_id}" to quit"#);
         // osascript exit codes are inconsistent (a missing app, a
-        // user-declined quit dialog, etc. all fail differently). We don't
-        // propagate the failure: later stages will handle unresponsive
-        // targets via SIGTERM / SIGKILL.
-        let _ = Command::new("osascript")
-            .args(["-e", &script])
-            .output()
-            .await?;
+        // user-declined quit dialog, etc. all fail differently), and the
+        // subprocess can block indefinitely waiting on the target app or
+        // Automation plumbing. Keep this stage best-effort and let later
+        // SIGTERM / SIGKILL stages handle unresponsive targets.
+        let mut child = Command::new("osascript").args(["-e", &script]).spawn()?;
+        match timeout(self.max_wait(), child.wait()).await {
+            Ok(Ok(_)) => {}
+            Ok(Err(error)) => return Err(error.into()),
+            Err(_) => {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+            }
+        }
         Ok(())
     }
 }

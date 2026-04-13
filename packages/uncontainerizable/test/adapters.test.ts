@@ -15,8 +15,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 function darwinProbe(overrides: Partial<Probe> = {}): Probe {
   return {
     pid: 123,
-    bundleId: null,
-    executablePath: null,
+    bundleId: undefined,
+    executablePath: undefined,
     platform: "darwin",
     capturedAtMs: 0,
     ...overrides,
@@ -26,8 +26,8 @@ function darwinProbe(overrides: Partial<Probe> = {}): Probe {
 function linuxProbe(overrides: Partial<Probe> = {}): Probe {
   return {
     pid: 123,
-    bundleId: null,
-    executablePath: null,
+    bundleId: undefined,
+    executablePath: undefined,
     platform: "linux",
     capturedAtMs: 0,
     ...overrides,
@@ -42,7 +42,7 @@ describe("appkit.matches", () => {
   });
 
   test("does not match when the bundle id is missing", () => {
-    expect(appkit.matches(darwinProbe({ bundleId: null }))).toBe(false);
+    expect(appkit.matches(darwinProbe({ bundleId: undefined }))).toBe(false);
   });
 
   test("does not match a non-darwin probe", () => {
@@ -75,7 +75,9 @@ describe("chromium.matches", () => {
   });
 
   test("does not match when executable path is missing", () => {
-    expect(chromium.matches(darwinProbe({ executablePath: null }))).toBe(false);
+    expect(chromium.matches(darwinProbe({ executablePath: undefined }))).toBe(
+      false
+    );
   });
 });
 
@@ -123,9 +125,9 @@ describe("crashReporter.matches", () => {
   });
 
   test("does not match when executablePath is missing", () => {
-    expect(crashReporter.matches(darwinProbe({ executablePath: null }))).toBe(
-      false
-    );
+    expect(
+      crashReporter.matches(darwinProbe({ executablePath: undefined }))
+    ).toBe(false);
   });
 
   test("does not match non-darwin probes", () => {
@@ -181,7 +183,7 @@ describe.runIf(process.platform !== "win32")("appkit.clearCrashState", () => {
   });
 
   test("does nothing when the bundle id is absent", async () => {
-    const probe = darwinProbe({ bundleId: null });
+    const probe = darwinProbe({ bundleId: undefined });
     await appkit.clearCrashState?.(probe);
     await expect(stat(savedStateDir)).resolves.toBeDefined();
   });

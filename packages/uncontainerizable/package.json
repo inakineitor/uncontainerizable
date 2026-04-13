@@ -1,6 +1,6 @@
 {
   "name": "uncontainerizable",
-  "version": "0.0.3",
+  "version": "0.1.0",
   "description": "Graceful process lifecycle for programs that can't be containerized",
   "keywords": [
     "lifecycle",
@@ -59,7 +59,7 @@
     "@types/node": "^24",
     "@uncontainerizable/tsconfig": "workspace:*",
     "publint": "^0.3",
-    "tsdown": "^0.20",
+    "tsdown": "^0.21.7",
     "typescript": "^6",
     "vitest": "^4"
   },

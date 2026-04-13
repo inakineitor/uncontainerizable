@@ -8,7 +8,11 @@ rust-version.workspace = true
 description = "napi-rs bindings for uncontainerizable-core"
 
 [lib]
-crate-type = ["cdylib"]
+# `cdylib` produces the `.node` binary for napi-rs loading; `rlib`
+# lets integration tests in `tests/` link against the crate under
+# `cargo test`. napi build only consumes the cdylib output, so
+# shipping both is free at publish time.
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 async-trait.workspace = true
@@ -16,6 +20,9 @@ napi.workspace = true
 napi-derive.workspace = true
 tokio = { workspace = true, features = ["sync"] }
 uncontainerizable-core = { path = "../uncontainerizable-core" }
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [build-dependencies]
 napi-build.workspace = true

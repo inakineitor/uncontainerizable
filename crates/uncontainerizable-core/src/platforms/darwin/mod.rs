@@ -1,11 +1,28 @@
 //! macOS platform implementation.
 //!
-//! Identity preemption is argv[0] tagging (see `argv_tag`): best-effort
-//! because argv[0] is not a kernel primitive like cgroup v2 or a named
-//! Job Object. The three-stage quit ladder (see `stages`) escalates from
-//! Apple Events through SIGTERM and SIGKILL. We place the spawned root in
-//! its own process group so helpers remain targetable even if the root
-//! exits and macOS reparents descendants to launchd.
+//! Two launch routes, chosen purely by the shape of the `command` path:
+//!
+//! * **Launch Services** (`bundle::is_app_bundle(command)` returns true):
+//!   `command` is a `.app` directory. We shell out to
+//!   `open -n -F -a <bundle>` so the app is properly registered with
+//!   `launchservicesd` (Dock, Apple Events, fresh saved state).
+//!   Identity preemption is PID-file based under `~/Library/Caches/`
+//!   because argv[0] tagging can't survive LS's argv rewrite; PID is
+//!   resolved after `open` returns by polling `ps` for the bundle's
+//!   main executable.
+//! * **Direct exec** (everything else): `tokio::process::Command` fires
+//!   `posix_spawn` on the given path, and we place the spawned root in
+//!   its own process group via `pre_exec(setpgid(0, 0))` so helpers
+//!   remain targetable even if the root exits and macOS reparents
+//!   descendants to launchd. Identity preemption uses argv[0] tagging
+//!   (see `argv_tag`). Best-effort: argv[0] is not a kernel primitive
+//!   like cgroup v2 or a named Job Object.
+//!
+//! The three-stage quit ladder (see `stages`) is shared across both
+//! routes and escalates from Apple Events through SIGTERM and SIGKILL.
+
+use std::path::Path;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use nix::libc;
@@ -20,11 +37,30 @@ use crate::error::{Error, Result, StageError};
 use crate::identity;
 
 pub mod argv_tag;
+pub mod bundle;
 pub mod lsappinfo;
 pub mod probe;
 pub mod stages;
 
+/// Time budget for resolving the PID of a Launch Services-launched
+/// app. `open -n -F -a` exits ~immediately after LS accepts the
+/// request, but the actual app process shows up in `ps` with a
+/// variable lag (50ms-1s on warm launches, longer on cold).
+const LS_PID_RESOLVE_TIMEOUT: Duration = Duration::from_secs(3);
+
 pub async fn spawn(app: &App, command: &str, opts: ContainOptions) -> Result<Box<dyn Container>> {
+    if bundle::is_app_bundle(command) {
+        spawn_bundle(app, command, opts).await
+    } else {
+        spawn_direct(app, command, opts).await
+    }
+}
+
+async fn spawn_direct(
+    app: &App,
+    command: &str,
+    opts: ContainOptions,
+) -> Result<Box<dyn Container>> {
     let tagged_argv0 = if let Some(ident) = &opts.identity {
         identity::validate(ident)?;
         let combined = identity::combine(app.prefix(), ident);
@@ -64,6 +100,84 @@ pub async fn spawn(app: &App, command: &str, opts: ContainOptions) -> Result<Box
     })?;
 
     let probe = probe::capture_probe(pid).await?;
+    let stages = stages::darwin_stages();
+    let core = ContainerCore::new(pid, probe, opts.adapters, stages);
+    Ok(Box::new(DarwinContainer::new(core)))
+}
+
+async fn spawn_bundle(
+    app: &App,
+    command: &str,
+    opts: ContainOptions,
+) -> Result<Box<dyn Container>> {
+    let bundle_path = Path::new(command)
+        .canonicalize()
+        .map_err(|e| Error::Spawn {
+            command: command.into(),
+            source: e,
+        })?;
+    let info = bundle::read_info(&bundle_path).await?;
+
+    // Identity preemption on the LS route is PID-file based because
+    // argv[0] tagging doesn't work under LS (argv is rewritten) and
+    // `ps -E` on macOS doesn't surface env to non-root despite the
+    // man page. The file lives under `~/Library/Caches` and survives
+    // supervisor crashes.
+    let combined_identity = if let Some(ident) = &opts.identity {
+        identity::validate(ident)?;
+        let combined = identity::combine(app.prefix(), ident);
+        bundle::kill_existing_by_pidfile(&combined, &info.executable_path)
+            .await
+            .map_err(|e| Error::Preempt {
+                identity: combined.clone(),
+                source: Box::new(e),
+            })?;
+        Some(combined)
+    } else {
+        None
+    };
+
+    // Snapshot before spawn so the post-launch poll knows which PIDs
+    // already belonged to other instances of this bundle.
+    let baseline = bundle::snapshot_bundle_pids(&info.executable_path).await;
+
+    let mut cmd = Command::new("open");
+    cmd.args(["-n", "-F", "-a", &bundle_path.to_string_lossy()]);
+    if !opts.args.is_empty() {
+        cmd.arg("--args").args(&opts.args);
+    }
+    cmd.envs(opts.env.iter().cloned());
+    if let Some(cwd) = &opts.cwd {
+        cmd.current_dir(cwd);
+    }
+    let status = cmd.status().await.map_err(|e| Error::Spawn {
+        command: "open".into(),
+        source: e,
+    })?;
+    if !status.success() {
+        return Err(Error::Bundle(crate::error::BundleError::OpenFailed {
+            bundle_path: bundle_path.clone(),
+            exit_code: status.code(),
+        }));
+    }
+
+    let deadline = Instant::now() + LS_PID_RESOLVE_TIMEOUT;
+    let pid = bundle::resolve_new_pid(&info.executable_path, &baseline, deadline, &info.bundle_id)
+        .await?;
+
+    // Commit the handoff: future spawns with this identity will find
+    // our PID in the file and preempt us. Errors are swallowed because
+    // preemption is best-effort — a failed write just means the next
+    // spawn can't kill this one via the file mechanism.
+    if let Some(combined) = &combined_identity {
+        let _ = bundle::write_pidfile(combined, pid).await;
+    }
+
+    let mut probe = probe::capture_probe_with_bundle(pid, Some(info.bundle_id.clone())).await?;
+    // Probe executable_path from `ps comm=` truncates on macOS, so
+    // prefer the Info.plist-derived path we already have.
+    probe.executable_path = Some(info.executable_path.clone());
+
     let stages = stages::darwin_stages();
     let core = ContainerCore::new(pid, probe, opts.adapters, stages);
     Ok(Box::new(DarwinContainer::new(core)))

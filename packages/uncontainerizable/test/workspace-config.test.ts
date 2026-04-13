@@ -7,6 +7,11 @@ async function readJson(relativePath: string): Promise<unknown> {
   return JSON.parse(await readFile(url, "utf8"));
 }
 
+function readText(relativePath: string): Promise<string> {
+  const url = new URL(relativePath, import.meta.url);
+  return readFile(url, "utf8");
+}
+
 describe("workspace config regressions", () => {
   test("native optional dependency versions stay aligned with the package version", async () => {
     const nativePackage = (await readJson(
@@ -31,5 +36,16 @@ describe("workspace config regressions", () => {
     };
 
     expect(turbo.tasks.test?.dependsOn).toContain("build");
+  });
+
+  test("repo lint commands use the pinned ultracite binary", async () => {
+    const packageJson = (await readJson("../../../package.json")) as {
+      scripts: Record<string, string>;
+    };
+    const ciWorkflow = await readText("../../../.github/workflows/ci.yml");
+
+    expect(packageJson.scripts.lint).toBe("pnpm exec ultracite check");
+    expect(packageJson.scripts["lint:fix"]).toBe("pnpm exec ultracite fix");
+    expect(ciWorkflow).toContain("run: pnpm exec ultracite check");
   });
 });

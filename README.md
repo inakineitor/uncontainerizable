@@ -10,10 +10,6 @@ display. Ships as a pure-Rust core plus Node bindings via
 If the program can run in a real sandbox — namespaces, seccomp, landlock —
 use a real container runtime. `uncontainerizable` is for everything else.
 
-> [!NOTE]
-> See [`documents/development-plan.md`](./documents/development-plan.md) for the
-> authoritative design, invariants, and per-platform mechanisms.
-
 ## Features
 
 - **Staged quit ladder.** Each platform escalates from its polite quit

@@ -8,8 +8,8 @@ Built on a pure-Rust core with Node bindings via
 [napi-rs](https://napi.rs); the published binary is prebuilt for every
 supported target.
 
-If the program can run in a real sandbox — namespaces, seccomp, landlock
-— use a real container runtime. `uncontainerizable` is for everything else.
+If the program can run in a real sandbox (namespaces, seccomp, landlock),
+use a real container runtime. `uncontainerizable` is for everything else.
 
 ## Features
 
@@ -138,7 +138,7 @@ exception.
 
 ### `coreVersion() → string`
 
-Returns the Rust core's version string — handy for logging and support.
+Returns the Rust core's version string. Handy for logging and support.
 
 ## Built-in adapters
 
@@ -169,7 +169,7 @@ import {
 
 An adapter is any object matching the `Adapter` shape. Every hook except
 `name` and `matches` is optional; unimplemented hooks are skipped. Hooks
-may be sync or async — the wrapper normalizes both forms before crossing
+may be sync or async; the wrapper normalizes both forms before crossing
 the napi boundary.
 
 ```ts
@@ -191,11 +191,11 @@ const logger: Adapter = {
 
 Hook surface:
 
-- `beforeQuit(probe)` — before the ladder starts.
-- `beforeStage(probe, stageName)` / `afterStage(probe, result)` — around
+- `beforeQuit(probe)`: before the ladder starts.
+- `beforeStage(probe, stageName)` / `afterStage(probe, result)`: around
   each stage.
-- `afterQuit(probe, result)` — after the ladder ends, terminal or not.
-- `clearCrashState(probe)` — only after a terminal-stage teardown.
+- `afterQuit(probe, result)`: after the ladder ends, terminal or not.
+- `clearCrashState(probe)`: only after a terminal-stage teardown.
 
 > [!TIP]
 > Adapter hooks are **advisory**: errors are collected into

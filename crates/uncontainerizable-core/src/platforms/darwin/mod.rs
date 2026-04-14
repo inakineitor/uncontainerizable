@@ -15,7 +15,7 @@
 //!   supervisor at all. The `identity` string is only consulted to
 //!   decide whether to preempt; it is not used to filter the kill
 //!   set. This means two concurrent LS launches of the same `.app`
-//!   with different identities cannot coexist — the second call
+//!   with different identities cannot coexist; the second call
 //!   will terminate the first.
 //!
 //!   The reason identity can't act as a scope here is that LS
@@ -29,7 +29,7 @@
 //!   pass the inner executable path (e.g.
 //!   `/Applications/Foo.app/Contents/MacOS/Foo`) to fall onto the
 //!   direct-exec route, which does support per-identity argv[0]
-//!   tagging — at the cost of losing LS integration.
+//!   tagging, at the cost of losing LS integration.
 //!
 //!   PID is resolved after `open` returns by polling `ps` for a new
 //!   process whose executable matches the bundle's main exec.
@@ -145,7 +145,7 @@ async fn spawn_bundle(
     // when `identity` is Some we SIGKILL every running instance of
     // the bundle's main executable before `open` fires, ignoring the
     // actual identity value. Two concurrent LS launches of the same
-    // `.app` with distinct identities cannot coexist — the second
+    // `.app` with distinct identities cannot coexist; the second
     // call will terminate the first. See the module-level docs for
     // the full rationale (argv and env-based per-launch tagging both
     // fall off under LS, leaving `ps comm=` as the only "is this my

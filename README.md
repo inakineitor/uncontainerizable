@@ -7,7 +7,7 @@ apps, and anything that needs the user's window server, keychain, or
 display. Ships as a pure-Rust core plus Node bindings via
 [napi-rs](https://napi.rs), so you can drive it from either runtime.
 
-If the program can run in a real sandbox — namespaces, seccomp, landlock —
+If the program can run in a real sandbox (namespaces, seccomp, landlock),
 use a real container runtime. `uncontainerizable` is for everything else.
 
 ## Features
@@ -130,7 +130,7 @@ import {
 
 An adapter is any object that matches the `Adapter` shape. Every hook
 except `name` and `matches` is optional; unimplemented hooks are skipped.
-Hooks may be sync or async — the wrapper normalizes both forms before
+Hooks may be sync or async; the wrapper normalizes both forms before
 crossing the napi boundary.
 
 ```ts

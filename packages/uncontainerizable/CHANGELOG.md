@@ -1,5 +1,13 @@
 # uncontainerizable
 
+## 0.1.3
+
+### Patch Changes
+
+- Update docs
+- Updated dependencies
+  - @uncontainerizable/native@0.1.3
+
 ## 0.1.2
 
 ### Patch Changes

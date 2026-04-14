@@ -1,6 +1,6 @@
 {
   "name": "@uncontainerizable/native",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Native bindings for uncontainerizable",
   "license": "MIT",
   "repository": {
